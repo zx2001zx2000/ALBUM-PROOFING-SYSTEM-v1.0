@@ -4,17 +4,17 @@ import React, { useState, useEffect, useRef } from "react";
 const API_URL = "https://script.google.com/macros/s/AKfycbwo8DNCpq7pXP8yH7QqNgo33vNWEfpjmpbhwqiO4-nMulEWQpCjk0M8WjyjNcy0Gy-SHQ/exec";
 
 // ==========================================
-// 🛠️ 核心樣式 (Fixed Flexbox Engine - 終極防擠壓)
+// 🛠️ 核心樣式 (Ultimate Mobile-Safe Engine)
 // ==========================================
 const GLOBAL_STYLES = `
   * { box-sizing: border-box; margin: 0; padding: 0; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; }
   
-  /* 👑 核心修復：將 body 完全釘死在可視區域，徹底隔絕手機網址列的干擾 */
+  /* 👑 核心修復：使用 100dvh 並移除 fixed，讓瀏覽器自動計算真實可視高度 */
   body, html { 
-    position: fixed; 
-    top: 0; left: 0; right: 0; bottom: 0;
     background-color: #F4F7F6; 
     color: #333333; 
+    width: 100%; 
+    height: 100dvh; 
     overflow: hidden; 
     user-select: none; 
     -webkit-overflow-scrolling: touch;
@@ -46,20 +46,20 @@ const GLOBAL_STYLES = `
   .btn-preview { flex: 1; padding: 12px; background: transparent; color: #187880; border: 1px solid #187880; border-radius: 4px; font-weight: 500; cursor: pointer; transition: 0.2s; }
   .btn-preview:hover { background: rgba(24, 120, 128, 0.05); }
 
-  /* 👑 主畫面框架改為 Flexbox 垂直排列，確保組件不移位 */
+  /* 👑 主畫面框架：加入 Safe Area Inset 完美避開瀏海與底部橫條 */
   .app-grid-shell { 
     display: flex; 
     flex-direction: column; 
     width: 100%; 
     height: 100%; 
     background: #F4F7F6; 
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
   }
 
-  /* 👑 頂部：絕對防壓縮 */
-  .header-bar { 
-    flex-shrink: 0; 
-    padding: 15px 30px; background: #ffffff; border-bottom: 1px solid #E5E9EA; display: flex; justify-content: space-between; align-items: center; z-index: 10; gap: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.02);
-  }
+  .header-bar { flex-shrink: 0; padding: 15px 30px; background: #ffffff; border-bottom: 1px solid #E5E9EA; display: flex; justify-content: space-between; align-items: center; z-index: 10; gap: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.02); }
   .brand-logo-text-small { font-family: "Montserrat", sans-serif; font-weight: 700; font-size: 1.2rem; letter-spacing: 2px; color: #187880; white-space: nowrap; }
   
   .view-tabs { display: flex; gap: 10px; overflow-x: auto; flex: 1; justify-content: center; padding-bottom: 2px; }
@@ -68,10 +68,10 @@ const GLOBAL_STYLES = `
   .tab-btn:hover { border-color: #187880; color: #187880; }
   .tab-btn.active { background: rgba(24, 120, 128, 0.08); border-color: #187880; color: #187880; }
 
-  /* 👑 視圖舞台：自動填滿剩餘高度 */
+  /* 視圖舞台 */
   .stage-center-area { 
     flex: 1;
-    min-height: 0; /* 防止內部元素過度撐開 */
+    min-height: 0; 
     position: relative; display: flex; justify-content: center; align-items: center; width: 100%; padding: 20px 20px 40px 20px; overflow: hidden; perspective: 2500px; 
   }
   
@@ -122,12 +122,8 @@ const GLOBAL_STYLES = `
   .shadow-left-edge { position: absolute; left: 0; top: 0; bottom: 0; width: 35px; background: linear-gradient(to right, rgba(0,0,0,0.12), transparent); z-index: 10; pointer-events: none; }
   .shadow-right-edge { position: absolute; right: 0; top: 0; bottom: 0; width: 35px; background: linear-gradient(to left, rgba(0,0,0,0.12), transparent); z-index: 10; pointer-events: none; }
 
-  /* 👑 底部：絕對防壓縮 */
-  .footer-controls-area { 
-    flex-shrink: 0; 
-    padding: 0; background: #ffffff; border-top: 1px solid #E5E9EA; display: flex; flex-direction: column; z-index: 100; box-shadow: 0 -5px 20px rgba(0,0,0,0.03); 
-  }
-  
+  /* 底部控制列 */
+  .footer-controls-area { flex-shrink: 0; padding: 0; background: #ffffff; border-top: 1px solid #E5E9EA; display: flex; flex-direction: column; z-index: 100; box-shadow: 0 -5px 20px rgba(0,0,0,0.03); }
   .feedback-section { padding: 15px 30px; display: flex; gap: 20px; align-items: stretch; background: #F4F7F6; border-bottom: 1px solid #E5E9EA; justify-content: center; }
   .feedback-info { width: 220px; display: flex; flex-direction: column; justify-content: center; flex-shrink: 0; }
   .feedback-info h3 { color: #187880; font-size: 0.95rem; margin-bottom: 5px; font-weight: 600;}
@@ -152,31 +148,8 @@ const GLOBAL_STYLES = `
   .logout-btn { background: transparent; color: #666; border: 1px solid #ccc; padding: 6px 16px; border-radius: 20px; cursor: pointer; transition: 0.2s; font-size: 0.85rem; font-weight: 600; white-space: nowrap;}
   .logout-btn:hover { color: #187880; border-color: #187880; }
 
-  /* Modal 樣式 */
-  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); display: flex; justify-content: center; align-items: center; z-index: 9999; padding: 15px; }
-  .final-modal-box { position: relative; background: #ffffff; border-top: 5px solid #187880; padding: 40px; border-radius: 12px; width: 100%; max-width: 680px; box-shadow: 0 25px 60px rgba(0,0,0,0.2); max-height: 85vh; overflow-y: auto; }
-  .close-modal-btn { position: absolute; top: 20px; right: 20px; background: transparent; border: none; color: #999; font-size: 22px; cursor: pointer; transition: 0.2s; }
-  .close-modal-btn:hover { color: #333; transform: scale(1.1); }
-  .legal-content-wrapper { margin: 25px 0; display: flex; flex-direction: column; gap: 12px; }
-  .legal-item { display: flex; align-items: flex-start; gap: 12px; text-align: left; background: #F4F7F6; padding: 15px; border-radius: 6px; border-left: 4px solid #187880; }
-  .legal-icon { font-size: 1.2rem; }
-  .legal-text { font-size: 0.85rem; color: #555; line-height: 1.6; }
-  .btn-agree { width: 100%; padding: 14px; background: #187880; color: #fff; border: none; border-radius: 6px; font-weight: 600; font-size: 1.05rem; cursor: pointer; transition: 0.2s; letter-spacing: 1px; }
-  .btn-agree:hover { background: #136066; box-shadow: 0 4px 12px rgba(24, 120, 128, 0.2); }
-  
-  .action-cards-container { display: flex; gap: 20px; margin-top: 20px; }
-  .action-card { flex: 1; background: #ffffff; border: 1px solid #E5E9EA; padding: 25px; border-radius: 8px; text-align: left; display: flex; flex-direction: column; box-shadow: 0 4px 15px rgba(0,0,0,0.03); }
-  .card-title { margin-bottom: 8px; font-size: 1.05rem; font-weight: 600; }
-  .card-desc { color: #666; font-size: 0.85rem; line-height: 1.5; margin-bottom: 20px; flex: 1; }
-  .final-feedback-summary { background: #F4F7F6; color: #333; border: 1px solid #ddd; padding: 15px; border-radius: 6px; margin-bottom: 15px; max-height: 150px; overflow-y: auto; font-size: 0.85rem; white-space: pre-wrap; line-height: 1.5;}
-  .modal-copy-btn { width: 100%; padding: 12px; background: #187880; color: #fff; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; transition: 0.2s; }
-  .modal-copy-btn.outline { background: transparent; color: #187880; border: 1px solid #187880; }
-  .modal-copy-btn:hover { background: #136066; color: #fff; }
-  .modal-copy-btn.outline:hover { background: rgba(24, 120, 128, 0.08); color: #187880; }
-  .modal-copy-btn.success { background: #4CAF50 !important; color: #fff !important; border-color: #4CAF50 !important; }
-
   /* ==========================================
-     📱 極致手機版響應式設計 (Mobile UI Engine)
+     📱 手機版專屬優化 (Mobile UI Engine)
      ========================================== */
   @media (max-width: 768px) {
     .header-bar { padding: 10px 15px; flex-wrap: wrap; gap: 8px; }
@@ -211,15 +184,85 @@ const GLOBAL_STYLES = `
     
     .page-indicator { font-size: 0.85rem; text-align: left; }
     .finish-btn { padding: 10px 18px; font-size: 0.9rem; min-width: 90px; }
+  }
 
-    .final-modal-box { padding: 25px 20px; border-radius: 8px; }
+  /* 👑 著作權聲明 Modal 視窗優化：標題/按鈕固定，內容滾動 */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); display: flex; justify-content: center; align-items: center; z-index: 9999; padding: 15px; }
+  
+  .final-modal-box { 
+    display: flex; 
+    flex-direction: column; 
+    background: #ffffff; 
+    border-top: 5px solid #187880; 
+    padding: 30px; 
+    border-radius: 12px; 
+    width: 100%; 
+    max-width: 680px; 
+    max-height: 85vh; /* 確保絕不超出螢幕高度 */
+    box-shadow: 0 25px 60px rgba(0,0,0,0.2); 
+  }
+  
+  .brand-title { flex-shrink: 0; color: #187880; font-size: 1.6rem; marginBottom: 5px; text-align: center; }
+  
+  .legal-content-wrapper { 
+    flex: 1; /* 自動延展填滿空間 */
+    min-height: 0; /* 允許內部滾動的關鍵 */
+    overflow-y: auto; /* 👑 中間內容獨立滾動 */
+    margin: 15px 0; 
+    display: flex; 
+    flex-direction: column; 
+    gap: 12px; 
+    padding-right: 5px;
+  }
+  
+  /* 美化滾動條 */
+  .legal-content-wrapper::-webkit-scrollbar { width: 5px; }
+  .legal-content-wrapper::-webkit-scrollbar-thumb { background: #ccc; border-radius: 5px; }
+  
+  .legal-item { display: flex; align-items: flex-start; gap: 12px; text-align: left; background: #F4F7F6; padding: 15px; border-radius: 6px; border-left: 4px solid #187880; }
+  .legal-icon { font-size: 1.2rem; }
+  .legal-text { font-size: 0.85rem; color: #555; line-height: 1.6; }
+  
+  /* 👑 同意按鈕絕對置底防壓 */
+  .btn-agree { 
+    flex-shrink: 0; 
+    width: 100%; 
+    padding: 14px; 
+    background: #187880; 
+    color: #fff; 
+    border: none; 
+    border-radius: 6px; 
+    font-weight: 600; 
+    font-size: 1.05rem; 
+    cursor: pointer; 
+    transition: 0.2s; 
+    letter-spacing: 1px; 
+  }
+  .btn-agree:hover { background: #136066; box-shadow: 0 4px 12px rgba(24, 120, 128, 0.2); }
+  
+  .close-modal-btn { position: absolute; top: 15px; right: 20px; background: transparent; border: none; color: #999; font-size: 22px; cursor: pointer; transition: 0.2s; }
+  .close-modal-btn:hover { color: #333; transform: scale(1.1); }
+  
+  .action-cards-container { display: flex; gap: 20px; margin-top: 10px; overflow-y: auto; max-height: 60vh; padding-right: 5px;}
+  @media (max-width: 768px) { .action-cards-container { flex-direction: column; } }
+  .action-card { flex: 1; background: #ffffff; border: 1px solid #E5E9EA; padding: 25px; border-radius: 8px; text-align: left; display: flex; flex-direction: column; box-shadow: 0 4px 15px rgba(0,0,0,0.03); }
+  .card-title { margin-bottom: 8px; font-size: 1.05rem; font-weight: 600; }
+  .card-desc { color: #666; font-size: 0.85rem; line-height: 1.5; margin-bottom: 20px; flex: 1; }
+  .final-feedback-summary { background: #F4F7F6; color: #333; border: 1px solid #ddd; padding: 15px; border-radius: 6px; margin-bottom: 15px; max-height: 150px; overflow-y: auto; font-size: 0.85rem; white-space: pre-wrap; line-height: 1.5;}
+  
+  .modal-copy-btn { width: 100%; padding: 12px; background: #187880; color: #fff; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; transition: 0.2s; }
+  .modal-copy-btn.outline { background: transparent; color: #187880; border: 1px solid #187880; }
+  .modal-copy-btn:hover { background: #136066; color: #fff; }
+  .modal-copy-btn.outline:hover { background: rgba(24, 120, 128, 0.08); color: #187880; }
+  .modal-copy-btn.success { background: #4CAF50 !important; color: #fff !important; border-color: #4CAF50 !important; }
+
+  @media (max-width: 480px) {
+    .final-modal-box { padding: 25px 20px; }
     .brand-title { font-size: 1.3rem !important; }
-    .legal-content-wrapper { margin: 15px 0; gap: 8px; }
     .legal-item { flex-direction: column; gap: 6px; padding: 12px; }
     .legal-icon { font-size: 1.1rem; }
     .legal-text { font-size: 0.8rem; }
     .btn-agree { padding: 12px; font-size: 1rem; }
-    .action-cards-container { flex-direction: column; gap: 15px; }
     .action-card { padding: 18px; }
   }
 `;
@@ -252,7 +295,6 @@ export default function App() {
   
   const [flipState, setFlipState] = useState<{ direction: "next" | "prev"; from: number; to: number; active: boolean; } | null>(null);
   
-  // 👑 出血線預設顯示
   const [showAlbumCropLines, setShowAlbumCropLines] = useState(true);
   const [showMerchCropLines, setShowMerchCropLines] = useState(true);
   
@@ -584,7 +626,6 @@ export default function App() {
     baseRightIndex = flipState.direction === "next" ? flipState.to : flipState.from;
   }
 
-  // 👑 相冊精準裁切線
   const isCurrentViewSingle = checkIsSinglePage(albumPhotos[albumSpreadIndex], albumSpreadIndex, albumPhotos.length);
   const albumCropLineStyle = isCurrentViewSingle 
     ? (albumSpreadIndex === 0 
@@ -601,18 +642,16 @@ export default function App() {
     }
   }
 
-  // 👑 單頁透明化引擎核心變數
   const isCoverView = albumSpreadIndex === 0 && isCurrentViewSingle && !flipState;
   const isBackCoverView = albumSpreadIndex === maxSpreads && isCurrentViewSingle && !flipState;
   const containerClasses = `album-book-container ${isCoverView ? 'is-front-cover' : ''} ${isBackCoverView ? 'is-back-cover' : ''}`;
 
-  // 👑 智能圖像渲染引擎 (完美消除白邊)
   const renderPageInner = (photo: Photo | null, pageIdx: number, side: "left" | "right") => {
     if (!photo) return <div className="blank-page">Blank Page 留白</div>;
     const isSingle = checkIsSinglePage(photo, pageIdx, albumPhotos.length);
 
     if (isSingle) {
-      if (pageIdx === 0) { // 封面顯示在右頁
+      if (pageIdx === 0) { 
         if (side === "left") return null; 
         return (
           <>
@@ -626,7 +665,7 @@ export default function App() {
             }} />
           </>
         );
-      } else { // 封底顯示在左頁
+      } else { 
         if (side === "right") return null; 
         return (
           <>
@@ -643,7 +682,6 @@ export default function App() {
       }
     }
 
-    // 內頁跨頁維持原樣
     return (
       <>
         {pageIdx === 0 && <div className="cover-spine" />}
@@ -700,9 +738,10 @@ export default function App() {
                 className={containerClasses} 
                 style={{ aspectRatio: dynamicAspectRatio, transform: containerTransform }}
               >
-                {showAlbumCropLines && (
+                {/* 👑 修正點 1：文字瘦身，且在 gatePassed (聲明已同意) 之後才顯示紅框 */}
+                {gatePassed && showAlbumCropLines && (
                   <div className="crop-line-overlay" style={albumCropLineStyle}>
-                    <span className="crop-warning-text">⚠️ 裁切安全線 (紅線外側將被裁掉)</span>
+                    <span className="crop-warning-text">⚠️ 裁切安全線</span>
                   </div>
                 )}
 
@@ -726,13 +765,15 @@ export default function App() {
                 )}
               </div>
               
-              <button 
-                className={`crop-toggle-btn-inline ${showAlbumCropLines ? 'active' : ''}`} 
-                onClick={() => setShowAlbumCropLines(!showAlbumCropLines)}
-                title="模擬印刷廠的安全裁切範圍"
-              >
-                {showAlbumCropLines ? '👁️ 隱藏相冊出血線' : '✂️ 顯示相冊出血線'}
-              </button>
+              {gatePassed && (
+                <button 
+                  className={`crop-toggle-btn-inline ${showAlbumCropLines ? 'active' : ''}`} 
+                  onClick={() => setShowAlbumCropLines(!showAlbumCropLines)}
+                  title="模擬印刷廠的安全裁切範圍"
+                >
+                  {showAlbumCropLines ? '👁️ 隱藏相冊出血線' : '✂️ 顯示相冊出血線'}
+                </button>
+              )}
             </div>
 
             <button 
@@ -759,7 +800,7 @@ export default function App() {
             <div className="merch-layout-wrapper">
               <div className="merch-image-box">
                 <div className="merch-img-wrapper">
-                   {showMerchCropLines && (
+                   {gatePassed && showMerchCropLines && (
                       <div className="crop-line-overlay" style={{ top: '6px', bottom: '6px', left: '6px', right: '6px', zIndex: 10 }}>
                         <span className="crop-warning-text" style={{ fontSize: '0.65rem', padding: '2px 6px' }}>⚠️ 裁切線</span>
                       </div>
@@ -768,13 +809,15 @@ export default function App() {
                 </div>
               </div>
               
-              <button 
-                className={`crop-toggle-btn-inline ${showMerchCropLines ? 'active' : ''}`} 
-                onClick={() => setShowMerchCropLines(!showMerchCropLines)}
-                title="模擬印刷廠的安全裁切範圍"
-              >
-                {showMerchCropLines ? '👁️ 隱藏商品出血線' : '✂️ 顯示商品出血線'}
-              </button>
+              {gatePassed && (
+                <button 
+                  className={`crop-toggle-btn-inline ${showMerchCropLines ? 'active' : ''}`} 
+                  onClick={() => setShowMerchCropLines(!showMerchCropLines)}
+                  title="模擬印刷廠的安全裁切範圍"
+                >
+                  {showMerchCropLines ? '👁️ 隱藏商品出血線' : '✂️ 顯示商品出血線'}
+                </button>
+              )}
             </div>
 
             <button 
@@ -855,8 +898,9 @@ export default function App() {
 
       {!gatePassed && (
         <div className="modal-overlay">
-          <div className="final-modal-box" style={{ maxWidth: '540px', textAlign: 'center' }}>
-            <h2 className="brand-title" style={{ color: '#187880', fontSize: '1.6rem', marginBottom: '5px' }}>Copyright Notice<br/>著作權聲明</h2>
+          {/* 👑 修正點 3：全方位內部滑動與絕對置底同意按鈕 */}
+          <div className="final-modal-box">
+            <h2 className="brand-title">Copyright Notice<br/>著作權聲明</h2>
             
             <div className="legal-content-wrapper">
               <div className="legal-item">
@@ -890,8 +934,8 @@ export default function App() {
         <div className="modal-overlay">
           <div className="final-modal-box">
             <button className="close-modal-btn" onClick={() => setShowFinalUI(false)}>✕</button>
-            <h2 className="brand-title" style={{ color: '#187880', textAlign: "center", marginBottom: "10px", fontSize: '1.4rem' }}>Layout Proofing 校稿結果</h2>
-            <p style={{ color: '#aaa', fontSize: '0.85rem', marginBottom: '20px', textAlign: 'center' }}>點擊按鈕複製訊息，直接貼回與我們的溝通群組中。</p>
+            <h2 className="brand-title" style={{ fontSize: '1.4rem' }}>Layout Proofing 校稿結果</h2>
+            <p style={{ color: '#aaa', fontSize: '0.85rem', marginBottom: '10px', textAlign: 'center' }}>點擊按鈕複製訊息，直接貼回與我們的溝通群組中。</p>
             
             <div className="action-cards-container">
               <div className="action-card">
@@ -902,14 +946,14 @@ export default function App() {
               
               <div className="action-card">
                 <h3 className="card-title" style={{ color: '#ff4d4f' }}>⚠️ 選項二：希望更換或調整</h3>
-                <p className="card-desc" style={{marginBottom: '10px'}}>以下為您剛才填寫的各商品修改建議：</p>
+                <p className="card-desc" style={{marginBottom: '5px'}}>以下為您剛才填寫的修改建議：</p>
                 
                 {generateFeedbackSummary() ? (
                   <div className="final-feedback-summary">
                     {generateFeedbackSummary()}
                   </div>
                 ) : (
-                  <div className="final-feedback-summary" style={{ fontStyle: 'italic', opacity: 0.5, textAlign: 'center', paddingTop: '40px' }}>
+                  <div className="final-feedback-summary" style={{ fontStyle: 'italic', opacity: 0.5, textAlign: 'center', paddingTop: '15px', paddingBottom: '15px' }}>
                     您尚未填寫任何調整建議喔！
                   </div>
                 )}
