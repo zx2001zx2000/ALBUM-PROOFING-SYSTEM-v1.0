@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 const API_URL = "https://script.google.com/macros/s/AKfycbwo8DNCpq7pXP8yH7QqNgo33vNWEfpjmpbhwqiO4-nMulEWQpCjk0M8WjyjNcy0Gy-SHQ/exec";
 
 // ==========================================
-// 🛠️ 核心樣式 (Pixel-Perfect Proportion Engine)
+// 🛠️ 核心樣式 (Pixel-Perfect Proportion + Safari Render Safe Engine)
 // ==========================================
 const GLOBAL_STYLES = `
   * { box-sizing: border-box; margin: 0; padding: 0; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; }
@@ -80,7 +80,7 @@ const GLOBAL_STYLES = `
     justify-content: center; 
     align-items: center; 
     width: 100%; 
-    padding: 50px 20px 40px 20px; /* 加大上方 padding 給標題空間 */
+    padding: 50px 20px 40px 20px; 
     perspective: 2500px; 
   }
 
@@ -99,7 +99,7 @@ const GLOBAL_STYLES = `
     padding: 0 60px;
     white-space: nowrap;
     overflow: hidden;
-    text-overflow: ellipsis; /* 防止過長檔名破版 */
+    text-overflow: ellipsis; 
   }
   
   .nav-btn-floating { position: absolute; top: 50%; transform: translateY(-50%); background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(4px); color: #187880; border: 1px solid #187880; width: 44px; height: 44px; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 1.2rem; font-weight: 300; cursor: pointer; transition: all 0.2s ease; z-index: 150; box-shadow: 0 4px 10px rgba(0,0,0,0.05);}
@@ -131,8 +131,20 @@ const GLOBAL_STYLES = `
   .crop-toggle-btn-inline:hover { background: rgba(24, 120, 128, 0.05); }
   .crop-toggle-btn-inline.active { background: #ff4d4f; color: #fff; border-color: #ff4d4f; }
 
-  /* 裁切線樣式 */
-  .crop-line-overlay { position: absolute; border: 1.5px dashed rgba(255, 77, 79, 0.9); z-index: 50; pointer-events: none; display: flex; align-items: flex-start; justify-content: flex-end; padding: 6px; transition: opacity 0.3s; }
+  /* 👑 核心防護補回：強制使用 2px 與 GPU 硬體渲染 (translateZ)，徹底解決 iOS 左右線條消失 Bug */
+  .crop-line-overlay { 
+    position: absolute; 
+    border: 2px dashed rgba(255, 77, 79, 0.9); 
+    z-index: 500; 
+    pointer-events: none; 
+    display: flex; 
+    align-items: flex-start; 
+    justify-content: flex-end; 
+    padding: 6px; 
+    transition: opacity 0.3s; 
+    transform: translateZ(0); 
+  }
+  
   .crop-warning-text { background: rgba(255, 77, 79, 0.95); color: #fff; font-size: 0.65rem; padding: 2px 5px; border-radius: 3px; font-weight: 500; letter-spacing: 1px; pointer-events: auto; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
 
   .album-flipper { position: absolute; top: 0; bottom: 0; width: 50%; transform-style: preserve-3d; z-index: 30; transition: transform 0.8s cubic-bezier(0.645,0.045,0.355,1); }
@@ -165,12 +177,9 @@ const GLOBAL_STYLES = `
   .save-status { font-size: 0.75rem; color: #187880; opacity: 0; transition: opacity 0.3s; margin-top: 5px; font-weight: 600;}
   .save-status.visible { opacity: 1; }
 
-  /* 底部導覽按鈕極簡化 */
   .navigation-bar { display: flex; justify-content: flex-end; align-items: center; padding: 12px 30px; }
   .finish-btn { padding: 8px 25px; background: transparent; color: #187880; border: 1px solid #187880; border-radius: 20px; cursor: pointer; font-size: 0.9rem; font-weight: 600; transition: 0.2s; min-width: 120px; }
   .finish-btn:hover { background: rgba(24, 120, 128, 0.1); }
-  .logout-btn { background: transparent; color: #666; border: 1px solid #ccc; padding: 6px 16px; border-radius: 20px; cursor: pointer; transition: 0.2s; font-size: 0.85rem; font-weight: 600; white-space: nowrap;}
-  .logout-btn:hover { color: #187880; border-color: #187880; }
 
   .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); display: flex; justify-content: center; align-items: center; z-index: 9999; padding: 15px; }
   .final-modal-box { display: flex; flex-direction: column; background: #ffffff; border-top: 5px solid #187880; padding: 30px; border-radius: 12px; width: 100%; max-width: 680px; max-height: 85vh; box-shadow: 0 25px 60px rgba(0,0,0,0.2); }
@@ -206,7 +215,7 @@ const GLOBAL_STYLES = `
     .header-actions { margin-left: auto; }
     .view-tabs { width: 100%; order: 3; justify-content: flex-start; padding-bottom: 5px; }
 
-    .stage-center-area { padding: 45px 10px 30px 10px; } /* 增加手機端上方留白防重疊 */
+    .stage-center-area { padding: 45px 10px 30px 10px; } 
     .stage-top-indicator { top: 12px; font-size: 0.9rem; padding: 0 45px; }
     
     .nav-btn-floating { width: 38px; height: 38px; font-size: 1rem; }
@@ -245,38 +254,27 @@ interface Photo { id: string; name: string; url: string; }
 
 export default function App() {
   const [appMode, setAppMode] = useState<'admin' | 'viewer'>('admin');
-  
   const [displayName, setDisplayName] = useState("");
   const [folderLink, setFolderLink] = useState("");
-  
   const [generatedLink, setGeneratedLink] = useState("");
   const [isCopied, setIsCopied] = useState(false);
-
   const [currentView, setCurrentView] = useState<'album' | 'merch'>('album');
   const [albumName, setAlbumName] = useState("");
-  
   const [albumPhotos, setAlbumPhotos] = useState<Photo[]>([]);
   const [merchPhotos, setMerchPhotos] = useState<Photo[]>([]);
-  
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [gatePassed, setGatePassed] = useState(false);
-  
   const [dynamicAspectRatio, setDynamicAspectRatio] = useState<number | null>(null); 
-
   const [albumSpreadIndex, setAlbumSpreadIndex] = useState(0);
   const [merchIndex, setMerchIndex] = useState(0);
-  
   const [flipState, setFlipState] = useState<{ direction: "next" | "prev"; from: number; to: number; active: boolean; } | null>(null);
-  
   const [showAlbumCropLines, setShowAlbumCropLines] = useState(true);
   const [showMerchCropLines, setShowMerchCropLines] = useState(true);
-  
   const [allFeedbacks, setAllFeedbacks] = useState<Record<string, Record<string, string>>>({});
   const [saveIndicator, setSaveIndicator] = useState(false);
   const [showFinalUI, setShowFinalUI] = useState(false);
   const [copyStatus, setCopyStatus] = useState<"approve" | "feedback" | null>(null);
-
   const albumRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -605,6 +603,7 @@ export default function App() {
     baseRightIndex = flipState.direction === "next" ? flipState.to : flipState.from;
   }
 
+  // 👑 【精準微調區】：相冊上下不變 (1.5%)，左右向外擴張至一半 (0.75%)；周邊商品全向外擴張至一半 (1.5%)
   const ALBUM_CROP_Y = "1.5%";    
   const ALBUM_CROP_X = "0.75%";   
   const MERCH_CROP_PERCENT = "1.5%"; 
@@ -707,7 +706,6 @@ export default function App() {
 
         {currentView === 'album' && albumPhotos.length > 0 && (
           <main className="stage-center-area">
-            {/* 👑 專屬置頂標題列 */}
             <div className="stage-top-indicator" title={getStageTitle()}>
               {getStageTitle()}
             </div>
@@ -744,6 +742,7 @@ export default function App() {
                   </div>
                 )}
                 
+                {/* 👑 DOM 置頂渲染防護：確保線條不被吃掉 */}
                 {gatePassed && showAlbumCropLines && (
                   <div className="crop-line-overlay" style={albumCropLineStyle}>
                     <span className="crop-warning-text">⚠️ 裁切線 (內縮4mm)</span>
@@ -774,7 +773,6 @@ export default function App() {
 
         {currentView === 'merch' && merchPhotos.length > 0 && (
           <main className="stage-center-area">
-             {/* 👑 專屬置頂標題列 */}
              <div className="stage-top-indicator" title={getStageTitle()}>
               {getStageTitle()}
             </div>
@@ -792,6 +790,7 @@ export default function App() {
                 <div className="merch-img-wrapper">
                    <img src={merchPhotos[merchIndex].url} alt={merchPhotos[merchIndex].name} draggable="false" />
                    
+                   {/* 👑 DOM 置頂渲染防護：確保線條不被吃掉 */}
                    {gatePassed && showMerchCropLines && (
                       <div className="crop-line-overlay" style={{ top: MERCH_CROP_PERCENT, bottom: MERCH_CROP_PERCENT, left: MERCH_CROP_PERCENT, right: MERCH_CROP_PERCENT }}>
                         <span className="crop-warning-text">⚠️ 裁切線 (內縮8mm)</span>
@@ -869,7 +868,6 @@ export default function App() {
           )}
 
           <div className="navigation-bar">
-             {/* 👑 原本在左下角的標題已移除，此區塊保留完成按鈕，並對齊右側 */}
              <button className="finish-btn" onClick={() => setShowFinalUI(true)}>完成並送出</button>
           </div>
         </footer>
