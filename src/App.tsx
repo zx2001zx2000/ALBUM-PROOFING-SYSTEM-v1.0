@@ -4,11 +4,12 @@ import React, { useState, useEffect, useRef } from "react";
 const API_URL = "https://script.google.com/macros/s/AKfycbwo8DNCpq7pXP8yH7QqNgo33vNWEfpjmpbhwqiO4-nMulEWQpCjk0M8WjyjNcy0Gy-SHQ/exec";
 
 // ==========================================
-// 🛠️ 核心樣式 (Fresh & Bright Light Mode UI)
+// 🛠️ 核心樣式 (Fresh, Bright & Mobile-First UI)
 // ==========================================
 const GLOBAL_STYLES = `
   * { box-sizing: border-box; margin: 0; padding: 0; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; }
-  /* 全局背景改為高級明亮淺灰，字體改為深灰黑 */
+  
+  /* 👑 啟用 100dvh (Dynamic Viewport Height)，徹底解決手機底部按鈕被吃掉的問題 */
   body, html { background-color: #F4F7F6; color: #333333; width: 100%; height: 100%; overflow: hidden; user-select: none; }
   
   /* 後台登入區 */
@@ -23,7 +24,6 @@ const GLOBAL_STYLES = `
   .drive-input::placeholder { color: #aaa; }
   .drive-input:focus { background: #ffffff; border-color: #187880; box-shadow: 0 0 0 3px rgba(24, 120, 128, 0.1); }
   
-  /* 簡約按鈕 */
   .btn-generate { width: 100%; padding: 14px; background: #187880; color: #ffffff; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; transition: 0.2s; font-size: 1rem; letter-spacing: 1px; }
   .btn-generate:hover:not(:disabled) { background: #136066; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(24, 120, 128, 0.2); }
   .btn-generate:disabled { background: #e0e0e0; color: #999; cursor: not-allowed; }
@@ -38,8 +38,17 @@ const GLOBAL_STYLES = `
   .btn-preview { flex: 1; padding: 12px; background: transparent; color: #187880; border: 1px solid #187880; border-radius: 4px; font-weight: 500; cursor: pointer; transition: 0.2s; }
   .btn-preview:hover { background: rgba(24, 120, 128, 0.05); }
 
-  /* 主畫面框架 - 清新明亮底 */
-  .app-grid-shell { display: grid; grid-template-rows: auto 1fr auto; width: 100%; height: 100vh; background: #F4F7F6; overflow: hidden; }
+  /* 主畫面框架 */
+  .app-grid-shell { 
+    display: grid; 
+    grid-template-rows: auto 1fr auto; 
+    width: 100%; 
+    height: 100vh; 
+    height: 100dvh; /* 👑 核心：動態視圖高度，無縫適配手機導覽列 */
+    background: #F4F7F6; 
+    overflow: hidden; 
+  }
+
   .header-bar { padding: 15px 30px; background: #ffffff; border-bottom: 1px solid #E5E9EA; display: flex; justify-content: space-between; align-items: center; z-index: 10; gap: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.02);}
   .brand-logo-text-small { font-family: "Montserrat", sans-serif; font-weight: 700; font-size: 1.2rem; letter-spacing: 2px; color: #187880; white-space: nowrap; }
   
@@ -50,30 +59,36 @@ const GLOBAL_STYLES = `
   .tab-btn.active { background: rgba(24, 120, 128, 0.08); border-color: #187880; color: #187880; }
 
   /* 視圖舞台 */
-  .stage-center-area { position: relative; display: flex; justify-content: center; align-items: center; width: 100%; height: 100%; padding: 20px 20px 40px 20px; overflow: hidden; perspective: 2500px; }
+  .stage-center-area { 
+    position: relative; 
+    display: flex; 
+    justify-content: center; 
+    align-items: center; 
+    width: 100%; 
+    height: 100%; 
+    min-height: 0; /* 👑 核心：允許 CSS Grid 內部容器自動縮小，避免擠壓底部 */
+    padding: 20px 20px 40px 20px; 
+    overflow: hidden; 
+    perspective: 2500px; 
+  }
   
-  /* 左右切換箭頭 - 明亮版 */
+  /* 左右切換箭頭 */
   .nav-btn-floating { position: absolute; top: 50%; transform: translateY(-50%); background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(4px); color: #187880; border: 1px solid #187880; width: 44px; height: 44px; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 1.2rem; font-weight: 300; cursor: pointer; transition: all 0.2s ease; z-index: 150; box-shadow: 0 4px 10px rgba(0,0,0,0.05);}
   .nav-btn-floating:hover:not(:disabled) { background: #187880; color: #fff; transform: translateY(-50%) scale(1.05); box-shadow: 0 6px 15px rgba(24, 120, 128, 0.2);}
   .nav-btn-floating:disabled { opacity: 0; pointer-events: none; }
   .nav-left { left: 40px; }
   .nav-right { right: 40px; }
 
-  /* 佈局容器 */
   .album-layout-wrapper { position: relative; display: flex; flex-direction: column; align-items: flex-end; width: 86vw; transition: transform 0.8s cubic-bezier(0.645,0.045,0.355,1); }
-  
-  /* 👑 3D 書本容器與單頁透明化邏輯 (空氣感陰影) */
   .album-book-container { position: relative; display: flex; width: 100%; box-shadow: 0 15px 40px rgba(0,0,0,0.12); background: #fff; border-radius: 2px; transition: background 0.3s, box-shadow 0.3s; }
   .album-page-base { position: absolute; top: 0; bottom: 0; width: 50%; overflow: hidden; display: flex; justify-content: center; align-items: center; transition: opacity 0.3s; }
   .base-left { left: 0; border-radius: 3px 0 0 3px; }
   .base-right { right: 0; border-radius: 0 3px 3px 0; }
 
-  /* 封面狀態：移除整體陰影，將陰影獨立加在右頁 */
   .album-book-container.is-front-cover { background: transparent; box-shadow: none; }
   .album-book-container.is-front-cover .base-left { opacity: 0; pointer-events: none; }
   .album-book-container.is-front-cover .base-right { background: #fff; box-shadow: 0 15px 40px rgba(0,0,0,0.12); border-radius: 4px; }
   
-  /* 封底狀態：移除整體陰影，將陰影獨立加在左頁 */
   .album-book-container.is-back-cover { background: transparent; box-shadow: none; }
   .album-book-container.is-back-cover .base-right { opacity: 0; pointer-events: none; }
   .album-book-container.is-back-cover .base-left { background: #fff; box-shadow: 0 15px 40px rgba(0,0,0,0.12); border-radius: 4px; }
@@ -83,7 +98,6 @@ const GLOBAL_STYLES = `
   .merch-img-wrapper { position: relative; display: inline-block; max-width: 100%; max-height: 55vh; }
   .merch-img-wrapper img { display: block; max-width: 100%; max-height: 55vh; object-fit: contain; border-radius: 2px; box-shadow: 0 8px 25px rgba(0,0,0,0.15); }
 
-  /* 線框切換按鈕 - 明亮版 */
   .crop-toggle-btn-inline { margin-top: 15px; background: #ffffff; color: #187880; border: 1px solid #187880; padding: 8px 18px; border-radius: 20px; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: 0.2s; display: flex; align-items: center; gap: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
   .crop-toggle-btn-inline:hover { background: rgba(24, 120, 128, 0.05); }
   .crop-toggle-btn-inline.active { background: #ff4d4f; color: #fff; border-color: #ff4d4f; }
@@ -91,7 +105,6 @@ const GLOBAL_STYLES = `
   .crop-line-overlay { position: absolute; border: 1px dashed rgba(255, 77, 79, 0.9); z-index: 50; pointer-events: none; display: flex; align-items: flex-start; justify-content: flex-end; padding: 10px; transition: opacity 0.3s; }
   .crop-warning-text { background: rgba(255, 77, 79, 0.95); color: #fff; font-size: 0.7rem; padding: 4px 8px; border-radius: 3px; font-weight: 500; letter-spacing: 1px; pointer-events: auto; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
 
-  /* 翻頁動畫相關 */
   .album-flipper { position: absolute; top: 0; bottom: 0; width: 50%; transform-style: preserve-3d; z-index: 30; transition: transform 0.8s cubic-bezier(0.645,0.045,0.355,1); }
   .flipping-next { right: 0; transform-origin: left center; }
   .flipping-prev { left: 0; transform-origin: right center; }
@@ -107,7 +120,7 @@ const GLOBAL_STYLES = `
   .shadow-left-edge { position: absolute; left: 0; top: 0; bottom: 0; width: 35px; background: linear-gradient(to right, rgba(0,0,0,0.12), transparent); z-index: 10; pointer-events: none; }
   .shadow-right-edge { position: absolute; right: 0; top: 0; bottom: 0; width: 35px; background: linear-gradient(to left, rgba(0,0,0,0.12), transparent); z-index: 10; pointer-events: none; }
 
-  /* 下方留言控制列 - 明亮版 */
+  /* 下方留言控制列 */
   .footer-controls-area { padding: 0; background: #ffffff; border-top: 1px solid #E5E9EA; display: flex; flex-direction: column; z-index: 100; box-shadow: 0 -5px 20px rgba(0,0,0,0.03); }
   .feedback-section { padding: 15px 30px; display: flex; gap: 20px; align-items: stretch; background: #F4F7F6; border-bottom: 1px solid #E5E9EA; justify-content: center; }
   .feedback-info { width: 220px; display: flex; flex-direction: column; justify-content: center; flex-shrink: 0; }
@@ -123,53 +136,94 @@ const GLOBAL_STYLES = `
   .save-status { font-size: 0.75rem; color: #187880; opacity: 0; transition: opacity 0.3s; margin-top: 5px; font-weight: 600;}
   .save-status.visible { opacity: 1; }
 
+  /* 導覽與完成按鈕排版 */
   .navigation-bar { display: flex; justify-content: space-between; align-items: center; padding: 12px 30px; }
+  .spacer-left { flex: 1; }
   .nav-controls { display: flex; align-items: center; flex: 1; justify-content: center; }
+  .nav-action-right { flex: 1; display: flex; justify-content: flex-end; }
   .page-indicator { text-align: center; letter-spacing: 1px; color: #187880; font-weight: 700; font-size: 1rem; }
   .finish-btn { padding: 8px 25px; background: transparent; color: #187880; border: 1px solid #187880; border-radius: 20px; cursor: pointer; font-size: 0.9rem; font-weight: 600; transition: 0.2s; min-width: 120px; }
   .finish-btn:hover { background: rgba(24, 120, 128, 0.1); }
   .logout-btn { background: transparent; color: #666; border: 1px solid #ccc; padding: 6px 16px; border-radius: 20px; cursor: pointer; transition: 0.2s; font-size: 0.85rem; font-weight: 600; white-space: nowrap;}
   .logout-btn:hover { color: #187880; border-color: #187880; }
 
-  @media (max-width: 768px) {
-    .header-bar { flex-direction: column; padding: 15px; gap: 12px; }
-    .view-tabs { width: 100%; justify-content: flex-start; }
-    .nav-btn-floating { width: 35px; height: 35px; font-size: 1rem; }
-    .nav-left { left: 10px; }
-    .nav-right { right: 10px; }
-    .feedback-section { flex-direction: column; gap: 10px; padding: 15px; }
-    .feedback-info { width: 100%; text-align: center; }
-    .page-feedback-textarea { height: 60px; }
-    .navigation-bar { padding: 15px; }
-    .album-layout-wrapper, .merch-layout-wrapper { width: 95vw; }
-    .merch-image-box { padding: 15px; }
-  }
-
-  /* Modal 樣式 - 明亮版 */
+  /* Modal 樣式 */
   .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); display: flex; justify-content: center; align-items: center; z-index: 9999; padding: 15px; }
-  .final-modal-box { position: relative; background: #ffffff; border-top: 5px solid #187880; padding: 40px; border-radius: 12px; width: 100%; max-width: 680px; box-shadow: 0 25px 60px rgba(0,0,0,0.2); }
+  .final-modal-box { position: relative; background: #ffffff; border-top: 5px solid #187880; padding: 40px; border-radius: 12px; width: 100%; max-width: 680px; box-shadow: 0 25px 60px rgba(0,0,0,0.2); max-height: 85vh; overflow-y: auto; }
   .close-modal-btn { position: absolute; top: 20px; right: 20px; background: transparent; border: none; color: #999; font-size: 22px; cursor: pointer; transition: 0.2s; }
   .close-modal-btn:hover { color: #333; transform: scale(1.1); }
   .legal-content-wrapper { margin: 25px 0; display: flex; flex-direction: column; gap: 12px; }
   .legal-item { display: flex; align-items: flex-start; gap: 12px; text-align: left; background: #F4F7F6; padding: 15px; border-radius: 6px; border-left: 4px solid #187880; }
   .legal-icon { font-size: 1.2rem; }
   .legal-text { font-size: 0.85rem; color: #555; line-height: 1.6; }
-  
   .btn-agree { width: 100%; padding: 14px; background: #187880; color: #fff; border: none; border-radius: 6px; font-weight: 600; font-size: 1.05rem; cursor: pointer; transition: 0.2s; letter-spacing: 1px; }
   .btn-agree:hover { background: #136066; box-shadow: 0 4px 12px rgba(24, 120, 128, 0.2); }
   
   .action-cards-container { display: flex; gap: 20px; margin-top: 20px; }
-  @media (max-width: 768px) { .action-cards-container { flex-direction: column; } }
   .action-card { flex: 1; background: #ffffff; border: 1px solid #E5E9EA; padding: 25px; border-radius: 8px; text-align: left; display: flex; flex-direction: column; box-shadow: 0 4px 15px rgba(0,0,0,0.03); }
   .card-title { margin-bottom: 8px; font-size: 1.05rem; font-weight: 600; }
   .card-desc { color: #666; font-size: 0.85rem; line-height: 1.5; margin-bottom: 20px; flex: 1; }
   .final-feedback-summary { background: #F4F7F6; color: #333; border: 1px solid #ddd; padding: 15px; border-radius: 6px; margin-bottom: 15px; max-height: 150px; overflow-y: auto; font-size: 0.85rem; white-space: pre-wrap; line-height: 1.5;}
-  
   .modal-copy-btn { width: 100%; padding: 12px; background: #187880; color: #fff; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; transition: 0.2s; }
   .modal-copy-btn.outline { background: transparent; color: #187880; border: 1px solid #187880; }
   .modal-copy-btn:hover { background: #136066; color: #fff; }
   .modal-copy-btn.outline:hover { background: rgba(24, 120, 128, 0.08); color: #187880; }
   .modal-copy-btn.success { background: #4CAF50 !important; color: #fff !important; border-color: #4CAF50 !important; }
+
+  /* ==========================================
+     📱 極致手機版響應式設計 (Mobile UI Engine)
+     ========================================== */
+  @media (max-width: 768px) {
+    /* 頂部縮編 */
+    .header-bar { padding: 10px 15px; flex-wrap: wrap; gap: 8px; }
+    .brand-logo-text-small { font-size: 1.1rem; }
+    .header-actions { margin-left: auto; }
+    .view-tabs { width: 100%; order: 3; justify-content: flex-start; padding-bottom: 5px; }
+    
+    /* 舞台區縮編 */
+    .stage-center-area { padding: 10px 10px 20px 10px; }
+    .nav-btn-floating { width: 38px; height: 38px; font-size: 1rem; }
+    .nav-left { left: 8px; }
+    .nav-right { right: 8px; }
+
+    /* 相冊與周邊響應式，保證不超出螢幕 */
+    .album-layout-wrapper, .merch-layout-wrapper { width: 88vw !important; align-items: center; justify-content: center; }
+    .crop-toggle-btn-inline { margin-top: 12px; padding: 6px 14px; font-size: 0.8rem; }
+    .merch-img-wrapper img { max-height: 40vh; }
+
+    /* 底部控制列極致瘦身，保證完成按鈕一定顯示 */
+    .footer-controls-area { border-top: 1px solid #ddd; }
+    .feedback-section { flex-direction: column; gap: 6px; padding: 10px 15px; }
+    
+    /* 隱藏不必要的提示文字，將標題與儲存狀態放同一行 */
+    .feedback-info { width: 100%; flex-direction: row; justify-content: space-between; align-items: center; }
+    .feedback-info h3 { font-size: 0.85rem; margin: 0; }
+    .feedback-info p { display: none; } 
+    .save-status { margin: 0; font-size: 0.75rem; }
+
+    .page-feedback-textarea { height: 55px; padding: 8px; font-size: 0.85rem; }
+    .shadow-disclaimer-text { font-size: 0.65rem; margin-top: 4px; }
+
+    /* 導覽列與按鈕緊湊排版 */
+    .navigation-bar { padding: 10px 15px; flex-direction: row; justify-content: space-between; align-items: center; gap: 10px; }
+    .spacer-left { display: none !important; } /* 隱藏左側佔位符 */
+    .nav-controls { flex: 1; justify-content: flex-start; }
+    .nav-action-right { flex: unset; justify-content: flex-end; }
+    
+    .page-indicator { font-size: 0.85rem; text-align: left; }
+    .finish-btn { padding: 10px 18px; font-size: 0.9rem; min-width: 90px; }
+
+    /* 手機版視窗 (Modal) 優化 */
+    .final-modal-box { padding: 25px 20px; border-radius: 8px; }
+    .brand-title { font-size: 1.3rem !important; }
+    .legal-content-wrapper { margin: 15px 0; gap: 8px; }
+    .legal-item { flex-direction: column; gap: 6px; padding: 12px; }
+    .legal-icon { font-size: 1.1rem; }
+    .legal-text { font-size: 0.8rem; }
+    .btn-agree { padding: 12px; font-size: 1rem; }
+    .action-cards-container { flex-direction: column; gap: 15px; }
+    .action-card { padding: 18px; }
+  }
 `;
 
 interface Photo { id: string; name: string; url: string; }
@@ -200,7 +254,6 @@ export default function App() {
   
   const [flipState, setFlipState] = useState<{ direction: "next" | "prev"; from: number; to: number; active: boolean; } | null>(null);
   
-  // 👑 出血線預設顯示
   const [showAlbumCropLines, setShowAlbumCropLines] = useState(true);
   const [showMerchCropLines, setShowMerchCropLines] = useState(true);
   
@@ -554,7 +607,7 @@ export default function App() {
   const isBackCoverView = albumSpreadIndex === maxSpreads && isCurrentViewSingle && !flipState;
   const containerClasses = `album-book-container ${isCoverView ? 'is-front-cover' : ''} ${isBackCoverView ? 'is-back-cover' : ''}`;
 
-  // 👑 智能圖像渲染引擎 (完美消除白邊)
+  // 👑 智能圖像渲染引擎
   const renderPageInner = (photo: Photo | null, pageIdx: number, side: "left" | "right") => {
     if (!photo) return <div className="blank-page">Blank Page 留白</div>;
     const isSingle = checkIsSinglePage(photo, pageIdx, albumPhotos.length);
@@ -783,7 +836,7 @@ export default function App() {
           )}
 
           <div className="navigation-bar">
-            <div style={{ flex: 1 }} className="spacer-left"></div>
+            <div className="spacer-left"></div>
             
             <div className="nav-controls">
               {currentView === 'album' ? (
@@ -793,7 +846,7 @@ export default function App() {
               )}
             </div>
 
-            <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
+            <div className="nav-action-right">
                <button className="finish-btn" onClick={() => setShowFinalUI(true)}>完成並送出</button>
             </div>
           </div>
