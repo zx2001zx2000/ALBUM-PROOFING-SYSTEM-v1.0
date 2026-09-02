@@ -4,22 +4,29 @@ import React, { useState, useEffect, useRef } from "react";
 const API_URL = "https://script.google.com/macros/s/AKfycbwo8DNCpq7pXP8yH7QqNgo33vNWEfpjmpbhwqiO4-nMulEWQpCjk0M8WjyjNcy0Gy-SHQ/exec";
 
 // ==========================================
-// 🛠️ 核心樣式 (Ultimate Mobile-Safe Engine)
+// 🛠️ 核心樣式 (Desktop App-like, Mobile Scrollable)
 // ==========================================
 const GLOBAL_STYLES = `
   * { box-sizing: border-box; margin: 0; padding: 0; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; }
   
-  /* 👑 核心修復：使用 100dvh 並移除 fixed，讓瀏覽器自動計算真實可視高度 */
+  /* 電腦版維持全螢幕鎖定 */
   body, html { 
     background-color: #F4F7F6; 
     color: #333333; 
     width: 100%; 
-    height: 100dvh; 
+    height: 100%; 
     overflow: hidden; 
     user-select: none; 
-    -webkit-overflow-scrolling: touch;
   }
   
+  .app-grid-shell { 
+    display: flex; 
+    flex-direction: column; 
+    width: 100%; 
+    height: 100%; 
+    background: #F4F7F6; 
+  }
+
   /* 後台登入區 */
   .admin-viewport { position: fixed; inset: 0; display: flex; justify-content: center; align-items: center; background: #F4F7F6; z-index: 1000; padding: 20px; }
   .admin-box { width: 100%; max-width: 500px; padding: 50px 40px; background-color: #ffffff; border-radius: 12px; box-shadow: 0 15px 35px rgba(0,0,0,0.06); text-align: center; border: 1px solid #E5E9EA; }
@@ -46,19 +53,6 @@ const GLOBAL_STYLES = `
   .btn-preview { flex: 1; padding: 12px; background: transparent; color: #187880; border: 1px solid #187880; border-radius: 4px; font-weight: 500; cursor: pointer; transition: 0.2s; }
   .btn-preview:hover { background: rgba(24, 120, 128, 0.05); }
 
-  /* 👑 主畫面框架：加入 Safe Area Inset 完美避開瀏海與底部橫條 */
-  .app-grid-shell { 
-    display: flex; 
-    flex-direction: column; 
-    width: 100%; 
-    height: 100%; 
-    background: #F4F7F6; 
-    padding-top: env(safe-area-inset-top);
-    padding-bottom: env(safe-area-inset-bottom);
-    padding-left: env(safe-area-inset-left);
-    padding-right: env(safe-area-inset-right);
-  }
-
   .header-bar { flex-shrink: 0; padding: 15px 30px; background: #ffffff; border-bottom: 1px solid #E5E9EA; display: flex; justify-content: space-between; align-items: center; z-index: 10; gap: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.02); }
   .brand-logo-text-small { font-family: "Montserrat", sans-serif; font-weight: 700; font-size: 1.2rem; letter-spacing: 2px; color: #187880; white-space: nowrap; }
   
@@ -68,12 +62,7 @@ const GLOBAL_STYLES = `
   .tab-btn:hover { border-color: #187880; color: #187880; }
   .tab-btn.active { background: rgba(24, 120, 128, 0.08); border-color: #187880; color: #187880; }
 
-  /* 視圖舞台 */
-  .stage-center-area { 
-    flex: 1;
-    min-height: 0; 
-    position: relative; display: flex; justify-content: center; align-items: center; width: 100%; padding: 20px 20px 40px 20px; overflow: hidden; perspective: 2500px; 
-  }
+  .stage-center-area { flex: 1; min-height: 0; position: relative; display: flex; justify-content: center; align-items: center; width: 100%; padding: 20px 20px 40px 20px; overflow: hidden; perspective: 2500px; }
   
   .nav-btn-floating { position: absolute; top: 50%; transform: translateY(-50%); background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(4px); color: #187880; border: 1px solid #187880; width: 44px; height: 44px; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 1.2rem; font-weight: 300; cursor: pointer; transition: all 0.2s ease; z-index: 150; box-shadow: 0 4px 10px rgba(0,0,0,0.05);}
   .nav-btn-floating:hover:not(:disabled) { background: #187880; color: #fff; transform: translateY(-50%) scale(1.05); box-shadow: 0 6px 15px rgba(24, 120, 128, 0.2);}
@@ -122,7 +111,6 @@ const GLOBAL_STYLES = `
   .shadow-left-edge { position: absolute; left: 0; top: 0; bottom: 0; width: 35px; background: linear-gradient(to right, rgba(0,0,0,0.12), transparent); z-index: 10; pointer-events: none; }
   .shadow-right-edge { position: absolute; right: 0; top: 0; bottom: 0; width: 35px; background: linear-gradient(to left, rgba(0,0,0,0.12), transparent); z-index: 10; pointer-events: none; }
 
-  /* 底部控制列 */
   .footer-controls-area { flex-shrink: 0; padding: 0; background: #ffffff; border-top: 1px solid #E5E9EA; display: flex; flex-direction: column; z-index: 100; box-shadow: 0 -5px 20px rgba(0,0,0,0.03); }
   .feedback-section { padding: 15px 30px; display: flex; gap: 20px; align-items: stretch; background: #F4F7F6; border-bottom: 1px solid #E5E9EA; justify-content: center; }
   .feedback-info { width: 220px; display: flex; flex-direction: column; justify-content: center; flex-shrink: 0; }
@@ -148,74 +136,12 @@ const GLOBAL_STYLES = `
   .logout-btn { background: transparent; color: #666; border: 1px solid #ccc; padding: 6px 16px; border-radius: 20px; cursor: pointer; transition: 0.2s; font-size: 0.85rem; font-weight: 600; white-space: nowrap;}
   .logout-btn:hover { color: #187880; border-color: #187880; }
 
-  /* ==========================================
-     📱 手機版專屬優化 (Mobile UI Engine)
-     ========================================== */
-  @media (max-width: 768px) {
-    .header-bar { padding: 10px 15px; flex-wrap: wrap; gap: 8px; }
-    .brand-logo-text-small { font-size: 1.1rem; }
-    .header-actions { margin-left: auto; }
-    .view-tabs { width: 100%; order: 3; justify-content: flex-start; padding-bottom: 5px; }
-    
-    .stage-center-area { padding: 10px 10px 20px 10px; }
-    .nav-btn-floating { width: 38px; height: 38px; font-size: 1rem; }
-    .nav-left { left: 8px; }
-    .nav-right { right: 8px; }
-
-    .album-layout-wrapper, .merch-layout-wrapper { width: 88vw !important; align-items: center; justify-content: center; }
-    .crop-toggle-btn-inline { margin-top: 12px; padding: 6px 14px; font-size: 0.8rem; }
-    .merch-img-wrapper img { max-height: 40vh; }
-
-    .footer-controls-area { border-top: 1px solid #ddd; }
-    .feedback-section { flex-direction: column; gap: 6px; padding: 10px 15px; }
-    
-    .feedback-info { width: 100%; flex-direction: row; justify-content: space-between; align-items: center; }
-    .feedback-info h3 { font-size: 0.85rem; margin: 0; }
-    .feedback-info p { display: none; } 
-    .save-status { margin: 0; font-size: 0.75rem; }
-
-    .page-feedback-textarea { height: 55px; padding: 8px; font-size: 0.85rem; }
-    .shadow-disclaimer-text { font-size: 0.65rem; margin-top: 4px; }
-
-    .navigation-bar { padding: 10px 15px; flex-direction: row; justify-content: space-between; align-items: center; gap: 10px; }
-    .spacer-left { display: none !important; }
-    .nav-controls { flex: 1; justify-content: flex-start; }
-    .nav-action-right { flex: unset; justify-content: flex-end; }
-    
-    .page-indicator { font-size: 0.85rem; text-align: left; }
-    .finish-btn { padding: 10px 18px; font-size: 0.9rem; min-width: 90px; }
-  }
-
-  /* 👑 著作權聲明 Modal 視窗優化：標題/按鈕固定，內容滾動 */
+  /* Modal 樣式 */
   .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); display: flex; justify-content: center; align-items: center; z-index: 9999; padding: 15px; }
+  .final-modal-box { display: flex; flex-direction: column; background: #ffffff; border-top: 5px solid #187880; padding: 30px; border-radius: 12px; width: 100%; max-width: 680px; max-height: 85vh; box-shadow: 0 25px 60px rgba(0,0,0,0.2); }
+  .brand-title { flex-shrink: 0; color: #187880; font-size: 1.6rem; text-align: center; }
   
-  .final-modal-box { 
-    display: flex; 
-    flex-direction: column; 
-    background: #ffffff; 
-    border-top: 5px solid #187880; 
-    padding: 30px; 
-    border-radius: 12px; 
-    width: 100%; 
-    max-width: 680px; 
-    max-height: 85vh; /* 確保絕不超出螢幕高度 */
-    box-shadow: 0 25px 60px rgba(0,0,0,0.2); 
-  }
-  
-  .brand-title { flex-shrink: 0; color: #187880; font-size: 1.6rem; marginBottom: 5px; text-align: center; }
-  
-  .legal-content-wrapper { 
-    flex: 1; /* 自動延展填滿空間 */
-    min-height: 0; /* 允許內部滾動的關鍵 */
-    overflow-y: auto; /* 👑 中間內容獨立滾動 */
-    margin: 15px 0; 
-    display: flex; 
-    flex-direction: column; 
-    gap: 12px; 
-    padding-right: 5px;
-  }
-  
-  /* 美化滾動條 */
+  .legal-content-wrapper { flex: 1; min-height: 0; overflow-y: auto; margin: 15px 0; display: flex; flex-direction: column; gap: 12px; padding-right: 5px; }
   .legal-content-wrapper::-webkit-scrollbar { width: 5px; }
   .legal-content-wrapper::-webkit-scrollbar-thumb { background: #ccc; border-radius: 5px; }
   
@@ -223,46 +149,101 @@ const GLOBAL_STYLES = `
   .legal-icon { font-size: 1.2rem; }
   .legal-text { font-size: 0.85rem; color: #555; line-height: 1.6; }
   
-  /* 👑 同意按鈕絕對置底防壓 */
-  .btn-agree { 
-    flex-shrink: 0; 
-    width: 100%; 
-    padding: 14px; 
-    background: #187880; 
-    color: #fff; 
-    border: none; 
-    border-radius: 6px; 
-    font-weight: 600; 
-    font-size: 1.05rem; 
-    cursor: pointer; 
-    transition: 0.2s; 
-    letter-spacing: 1px; 
-  }
+  .btn-agree { flex-shrink: 0; width: 100%; padding: 14px; background: #187880; color: #fff; border: none; border-radius: 6px; font-weight: 600; font-size: 1.05rem; cursor: pointer; transition: 0.2s; letter-spacing: 1px; }
   .btn-agree:hover { background: #136066; box-shadow: 0 4px 12px rgba(24, 120, 128, 0.2); }
   
   .close-modal-btn { position: absolute; top: 15px; right: 20px; background: transparent; border: none; color: #999; font-size: 22px; cursor: pointer; transition: 0.2s; }
   .close-modal-btn:hover { color: #333; transform: scale(1.1); }
   
   .action-cards-container { display: flex; gap: 20px; margin-top: 10px; overflow-y: auto; max-height: 60vh; padding-right: 5px;}
-  @media (max-width: 768px) { .action-cards-container { flex-direction: column; } }
   .action-card { flex: 1; background: #ffffff; border: 1px solid #E5E9EA; padding: 25px; border-radius: 8px; text-align: left; display: flex; flex-direction: column; box-shadow: 0 4px 15px rgba(0,0,0,0.03); }
   .card-title { margin-bottom: 8px; font-size: 1.05rem; font-weight: 600; }
   .card-desc { color: #666; font-size: 0.85rem; line-height: 1.5; margin-bottom: 20px; flex: 1; }
   .final-feedback-summary { background: #F4F7F6; color: #333; border: 1px solid #ddd; padding: 15px; border-radius: 6px; margin-bottom: 15px; max-height: 150px; overflow-y: auto; font-size: 0.85rem; white-space: pre-wrap; line-height: 1.5;}
-  
   .modal-copy-btn { width: 100%; padding: 12px; background: #187880; color: #fff; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; transition: 0.2s; }
   .modal-copy-btn.outline { background: transparent; color: #187880; border: 1px solid #187880; }
   .modal-copy-btn:hover { background: #136066; color: #fff; }
   .modal-copy-btn.outline:hover { background: rgba(24, 120, 128, 0.08); color: #187880; }
-  .modal-copy-btn.success { background: #4CAF50 !important; color: #fff !important; border-color: #4CAF50 !important; }
 
-  @media (max-width: 480px) {
-    .final-modal-box { padding: 25px 20px; }
+  /* ==========================================
+     📱 終極防護：手機版改為自然滑動 (Natural Scroll)
+     ========================================== */
+  @media (max-width: 768px) {
+    /* 👑 1. 徹底解除手機版的高度鎖定，允許自然上下滑動 */
+    body, html {
+      height: auto !important;
+      min-height: 100% !important;
+      overflow-y: auto !important;
+      overflow-x: hidden !important;
+    }
+    
+    .app-grid-shell {
+      height: auto !important;
+      min-height: 100vh;
+      overflow: visible !important;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* 👑 2. 標頭改為黏性定位，往下滑時依然在最上面 */
+    .header-bar {
+      position: sticky;
+      top: 0;
+      z-index: 500;
+      padding: 12px 15px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+      flex-wrap: wrap; gap: 8px;
+    }
+    .brand-logo-text-small { font-size: 1.1rem; }
+    .header-actions { margin-left: auto; }
+    .view-tabs { width: 100%; order: 3; justify-content: flex-start; padding-bottom: 5px; }
+
+    /* 👑 3. 舞台區解除高度限制，由 3D 書本自然撐開 */
+    .stage-center-area {
+      flex: none;
+      height: auto !important;
+      padding: 40px 10px;
+      margin-bottom: 20px;
+    }
+    .nav-btn-floating { width: 38px; height: 38px; font-size: 1rem; }
+    .nav-left { left: 5px; }
+    .nav-right { right: 5px; }
+
+    .album-layout-wrapper, .merch-layout-wrapper { width: 92vw !important; align-items: center; justify-content: center; }
+    .crop-toggle-btn-inline { margin-top: 15px; padding: 6px 14px; font-size: 0.8rem; }
+    .merch-img-wrapper img { max-height: 50vh; }
+
+    /* 👑 4. 下方控制列改為自然排列，自動推到網頁最下方 */
+    .footer-controls-area {
+      flex: none;
+      margin-top: auto; 
+      border-top: 1px solid #ddd;
+      padding-bottom: max(20px, env(safe-area-inset-bottom)); /* 避開 iPhone 底部橫條 */
+    }
+    .feedback-section { flex-direction: column; gap: 6px; padding: 15px; }
+    .feedback-info { width: 100%; flex-direction: row; justify-content: space-between; align-items: center; }
+    .feedback-info h3 { font-size: 0.85rem; margin: 0; }
+    .feedback-info p { display: none; } 
+    .save-status { margin: 0; font-size: 0.75rem; }
+    .page-feedback-textarea { height: 60px; padding: 8px; font-size: 0.85rem; }
+    .shadow-disclaimer-text { font-size: 0.65rem; margin-top: 4px; }
+
+    .navigation-bar { padding: 15px; flex-direction: row; justify-content: space-between; align-items: center; gap: 10px; }
+    .spacer-left { display: none !important; }
+    .nav-controls { flex: 1; justify-content: flex-start; }
+    .nav-action-right { flex: unset; justify-content: flex-end; }
+    .page-indicator { font-size: 0.85rem; text-align: left; }
+    .finish-btn { padding: 10px 18px; font-size: 0.9rem; min-width: 90px; }
+
+    /* 👑 5. Modal 視窗嚴格限制高度 75vh，避開所有 Safari 導覽列 */
+    .final-modal-box { padding: 25px 20px; max-height: 75vh; }
     .brand-title { font-size: 1.3rem !important; }
+    .legal-content-wrapper { margin: 15px 0; gap: 8px; }
     .legal-item { flex-direction: column; gap: 6px; padding: 12px; }
     .legal-icon { font-size: 1.1rem; }
     .legal-text { font-size: 0.8rem; }
-    .btn-agree { padding: 12px; font-size: 1rem; }
+    .btn-agree { padding: 12px; font-size: 1rem; margin-top: 10px;}
+    .action-cards-container { flex-direction: column; gap: 15px; }
     .action-card { padding: 18px; }
   }
 `;
@@ -633,15 +614,6 @@ export default function App() {
         : { top: '9px', bottom: '9px', left: '18px', right: 'calc(50% + 18px)' }) 
     : { top: '9px', bottom: '9px', left: '9px', right: '9px' };
 
-  let containerTransform = "translateX(0%)";
-  if (currentView === 'album') {
-    if (albumSpreadIndex === 0 && checkIsSinglePage(albumPhotos[0], 0, albumPhotos.length)) {
-      containerTransform = "translateX(-25%)"; 
-    } else if (albumSpreadIndex === maxSpreads && checkIsSinglePage(albumPhotos[maxSpreads], maxSpreads, albumPhotos.length)) {
-      containerTransform = "translateX(25%)";
-    }
-  }
-
   const isCoverView = albumSpreadIndex === 0 && isCurrentViewSingle && !flipState;
   const isBackCoverView = albumSpreadIndex === maxSpreads && isCurrentViewSingle && !flipState;
   const containerClasses = `album-book-container ${isCoverView ? 'is-front-cover' : ''} ${isBackCoverView ? 'is-back-cover' : ''}`;
@@ -736,9 +708,9 @@ export default function App() {
             <div className="album-layout-wrapper" style={{ maxWidth: `calc(55vh * ${dynamicAspectRatio})` }}>
               <div 
                 className={containerClasses} 
-                style={{ aspectRatio: dynamicAspectRatio, transform: containerTransform }}
+                style={{ aspectRatio: dynamicAspectRatio }}
               >
-                {/* 👑 修正點 1：文字瘦身，且在 gatePassed (聲明已同意) 之後才顯示紅框 */}
+                {/* 👑 修正點 2：在 gatePassed (聲明已同意) 之後才顯示紅框，並把文字變短 */}
                 {gatePassed && showAlbumCropLines && (
                   <div className="crop-line-overlay" style={albumCropLineStyle}>
                     <span className="crop-warning-text">⚠️ 裁切安全線</span>
@@ -898,10 +870,10 @@ export default function App() {
 
       {!gatePassed && (
         <div className="modal-overlay">
-          {/* 👑 修正點 3：全方位內部滑動與絕對置底同意按鈕 */}
           <div className="final-modal-box">
             <h2 className="brand-title">Copyright Notice<br/>著作權聲明</h2>
             
+            {/* 👑 修正點 3：只有這個區塊可以上下滑動，標題與按鈕絕對固定 */}
             <div className="legal-content-wrapper">
               <div className="legal-item">
                 <span className="legal-icon">📌</span>
