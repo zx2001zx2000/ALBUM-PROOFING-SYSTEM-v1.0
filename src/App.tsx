@@ -173,7 +173,6 @@ const GLOBAL_STYLES = `
 `;
 
 interface Photo { id: string; name: string; url: string; }
-interface ProductCategory { type: 'album' | 'merch'; name: string; photos: Photo[]; aspectRatio: number; }
 
 export default function App() {
   const [appMode, setAppMode] = useState<'admin' | 'viewer'>('admin');
@@ -555,7 +554,7 @@ export default function App() {
   const isBackCoverView = albumSpreadIndex === maxSpreads && isCurrentViewSingle && !flipState;
   const containerClasses = `album-book-container ${isCoverView ? 'is-front-cover' : ''} ${isBackCoverView ? 'is-back-cover' : ''}`;
 
-  // 👑 智能圖像渲染引擎
+  // 👑 智能圖像渲染引擎 (完美消除白邊)
   const renderPageInner = (photo: Photo | null, pageIdx: number, side: "left" | "right") => {
     if (!photo) return <div className="blank-page">Blank Page 留白</div>;
     const isSingle = checkIsSinglePage(photo, pageIdx, albumPhotos.length);
@@ -824,7 +823,6 @@ export default function App() {
                 <span className="legal-icon">🔒</span>
                 <span className="legal-text">此為專屬機密校稿連結，為保障您的隱私，請妥善保管，勿將網址發布或分享至公開社群平台。</span>
               </div>
-              {/* 👑 新增：最佳瀏覽體驗建議 */}
               <div className="legal-item">
                 <span className="legal-icon">💻</span>
                 <span className="legal-text"><strong>【最佳瀏覽建議】</strong>為確保您的審稿權益與成品準確性，建議您使用桌上型電腦、筆記型電腦或平板開啟此連結。手機等微型螢幕可能因畫面縮放導致排版壓縮、細節顯示不全，進而影響您的校稿判斷。</span>
