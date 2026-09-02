@@ -4,13 +4,21 @@ import React, { useState, useEffect, useRef } from "react";
 const API_URL = "https://script.google.com/macros/s/AKfycbwo8DNCpq7pXP8yH7QqNgo33vNWEfpjmpbhwqiO4-nMulEWQpCjk0M8WjyjNcy0Gy-SHQ/exec";
 
 // ==========================================
-// 🛠️ 核心樣式 (Fresh, Bright & Mobile-First UI)
+// 🛠️ 核心樣式 (Fixed Flexbox Engine - 終極防擠壓)
 // ==========================================
 const GLOBAL_STYLES = `
   * { box-sizing: border-box; margin: 0; padding: 0; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; }
   
-  /* 👑 啟用 100dvh (Dynamic Viewport Height)，徹底解決手機底部按鈕被吃掉的問題 */
-  body, html { background-color: #F4F7F6; color: #333333; width: 100%; height: 100%; overflow: hidden; user-select: none; }
+  /* 👑 核心修復：將 body 完全釘死在可視區域，徹底隔絕手機網址列的干擾 */
+  body, html { 
+    position: fixed; 
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: #F4F7F6; 
+    color: #333333; 
+    overflow: hidden; 
+    user-select: none; 
+    -webkit-overflow-scrolling: touch;
+  }
   
   /* 後台登入區 */
   .admin-viewport { position: fixed; inset: 0; display: flex; justify-content: center; align-items: center; background: #F4F7F6; z-index: 1000; padding: 20px; }
@@ -38,18 +46,20 @@ const GLOBAL_STYLES = `
   .btn-preview { flex: 1; padding: 12px; background: transparent; color: #187880; border: 1px solid #187880; border-radius: 4px; font-weight: 500; cursor: pointer; transition: 0.2s; }
   .btn-preview:hover { background: rgba(24, 120, 128, 0.05); }
 
-  /* 主畫面框架 */
+  /* 👑 主畫面框架改為 Flexbox 垂直排列，確保組件不移位 */
   .app-grid-shell { 
-    display: grid; 
-    grid-template-rows: auto 1fr auto; 
+    display: flex; 
+    flex-direction: column; 
     width: 100%; 
-    height: 100vh; 
-    height: 100dvh; /* 👑 核心：動態視圖高度，無縫適配手機導覽列 */
+    height: 100%; 
     background: #F4F7F6; 
-    overflow: hidden; 
   }
 
-  .header-bar { padding: 15px 30px; background: #ffffff; border-bottom: 1px solid #E5E9EA; display: flex; justify-content: space-between; align-items: center; z-index: 10; gap: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.02);}
+  /* 👑 頂部：絕對防壓縮 */
+  .header-bar { 
+    flex-shrink: 0; 
+    padding: 15px 30px; background: #ffffff; border-bottom: 1px solid #E5E9EA; display: flex; justify-content: space-between; align-items: center; z-index: 10; gap: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.02);
+  }
   .brand-logo-text-small { font-family: "Montserrat", sans-serif; font-weight: 700; font-size: 1.2rem; letter-spacing: 2px; color: #187880; white-space: nowrap; }
   
   .view-tabs { display: flex; gap: 10px; overflow-x: auto; flex: 1; justify-content: center; padding-bottom: 2px; }
@@ -58,21 +68,13 @@ const GLOBAL_STYLES = `
   .tab-btn:hover { border-color: #187880; color: #187880; }
   .tab-btn.active { background: rgba(24, 120, 128, 0.08); border-color: #187880; color: #187880; }
 
-  /* 視圖舞台 */
+  /* 👑 視圖舞台：自動填滿剩餘高度 */
   .stage-center-area { 
-    position: relative; 
-    display: flex; 
-    justify-content: center; 
-    align-items: center; 
-    width: 100%; 
-    height: 100%; 
-    min-height: 0; /* 👑 核心：允許 CSS Grid 內部容器自動縮小，避免擠壓底部 */
-    padding: 20px 20px 40px 20px; 
-    overflow: hidden; 
-    perspective: 2500px; 
+    flex: 1;
+    min-height: 0; /* 防止內部元素過度撐開 */
+    position: relative; display: flex; justify-content: center; align-items: center; width: 100%; padding: 20px 20px 40px 20px; overflow: hidden; perspective: 2500px; 
   }
   
-  /* 左右切換箭頭 */
   .nav-btn-floating { position: absolute; top: 50%; transform: translateY(-50%); background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(4px); color: #187880; border: 1px solid #187880; width: 44px; height: 44px; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 1.2rem; font-weight: 300; cursor: pointer; transition: all 0.2s ease; z-index: 150; box-shadow: 0 4px 10px rgba(0,0,0,0.05);}
   .nav-btn-floating:hover:not(:disabled) { background: #187880; color: #fff; transform: translateY(-50%) scale(1.05); box-shadow: 0 6px 15px rgba(24, 120, 128, 0.2);}
   .nav-btn-floating:disabled { opacity: 0; pointer-events: none; }
@@ -120,8 +122,12 @@ const GLOBAL_STYLES = `
   .shadow-left-edge { position: absolute; left: 0; top: 0; bottom: 0; width: 35px; background: linear-gradient(to right, rgba(0,0,0,0.12), transparent); z-index: 10; pointer-events: none; }
   .shadow-right-edge { position: absolute; right: 0; top: 0; bottom: 0; width: 35px; background: linear-gradient(to left, rgba(0,0,0,0.12), transparent); z-index: 10; pointer-events: none; }
 
-  /* 下方留言控制列 */
-  .footer-controls-area { padding: 0; background: #ffffff; border-top: 1px solid #E5E9EA; display: flex; flex-direction: column; z-index: 100; box-shadow: 0 -5px 20px rgba(0,0,0,0.03); }
+  /* 👑 底部：絕對防壓縮 */
+  .footer-controls-area { 
+    flex-shrink: 0; 
+    padding: 0; background: #ffffff; border-top: 1px solid #E5E9EA; display: flex; flex-direction: column; z-index: 100; box-shadow: 0 -5px 20px rgba(0,0,0,0.03); 
+  }
+  
   .feedback-section { padding: 15px 30px; display: flex; gap: 20px; align-items: stretch; background: #F4F7F6; border-bottom: 1px solid #E5E9EA; justify-content: center; }
   .feedback-info { width: 220px; display: flex; flex-direction: column; justify-content: center; flex-shrink: 0; }
   .feedback-info h3 { color: #187880; font-size: 0.95rem; margin-bottom: 5px; font-weight: 600;}
@@ -136,7 +142,6 @@ const GLOBAL_STYLES = `
   .save-status { font-size: 0.75rem; color: #187880; opacity: 0; transition: opacity 0.3s; margin-top: 5px; font-weight: 600;}
   .save-status.visible { opacity: 1; }
 
-  /* 導覽與完成按鈕排版 */
   .navigation-bar { display: flex; justify-content: space-between; align-items: center; padding: 12px 30px; }
   .spacer-left { flex: 1; }
   .nav-controls { display: flex; align-items: center; flex: 1; justify-content: center; }
@@ -174,28 +179,23 @@ const GLOBAL_STYLES = `
      📱 極致手機版響應式設計 (Mobile UI Engine)
      ========================================== */
   @media (max-width: 768px) {
-    /* 頂部縮編 */
     .header-bar { padding: 10px 15px; flex-wrap: wrap; gap: 8px; }
     .brand-logo-text-small { font-size: 1.1rem; }
     .header-actions { margin-left: auto; }
     .view-tabs { width: 100%; order: 3; justify-content: flex-start; padding-bottom: 5px; }
     
-    /* 舞台區縮編 */
     .stage-center-area { padding: 10px 10px 20px 10px; }
     .nav-btn-floating { width: 38px; height: 38px; font-size: 1rem; }
     .nav-left { left: 8px; }
     .nav-right { right: 8px; }
 
-    /* 相冊與周邊響應式，保證不超出螢幕 */
     .album-layout-wrapper, .merch-layout-wrapper { width: 88vw !important; align-items: center; justify-content: center; }
     .crop-toggle-btn-inline { margin-top: 12px; padding: 6px 14px; font-size: 0.8rem; }
     .merch-img-wrapper img { max-height: 40vh; }
 
-    /* 底部控制列極致瘦身，保證完成按鈕一定顯示 */
     .footer-controls-area { border-top: 1px solid #ddd; }
     .feedback-section { flex-direction: column; gap: 6px; padding: 10px 15px; }
     
-    /* 隱藏不必要的提示文字，將標題與儲存狀態放同一行 */
     .feedback-info { width: 100%; flex-direction: row; justify-content: space-between; align-items: center; }
     .feedback-info h3 { font-size: 0.85rem; margin: 0; }
     .feedback-info p { display: none; } 
@@ -204,16 +204,14 @@ const GLOBAL_STYLES = `
     .page-feedback-textarea { height: 55px; padding: 8px; font-size: 0.85rem; }
     .shadow-disclaimer-text { font-size: 0.65rem; margin-top: 4px; }
 
-    /* 導覽列與按鈕緊湊排版 */
     .navigation-bar { padding: 10px 15px; flex-direction: row; justify-content: space-between; align-items: center; gap: 10px; }
-    .spacer-left { display: none !important; } /* 隱藏左側佔位符 */
+    .spacer-left { display: none !important; }
     .nav-controls { flex: 1; justify-content: flex-start; }
     .nav-action-right { flex: unset; justify-content: flex-end; }
     
     .page-indicator { font-size: 0.85rem; text-align: left; }
     .finish-btn { padding: 10px 18px; font-size: 0.9rem; min-width: 90px; }
 
-    /* 手機版視窗 (Modal) 優化 */
     .final-modal-box { padding: 25px 20px; border-radius: 8px; }
     .brand-title { font-size: 1.3rem !important; }
     .legal-content-wrapper { margin: 15px 0; gap: 8px; }
@@ -254,6 +252,7 @@ export default function App() {
   
   const [flipState, setFlipState] = useState<{ direction: "next" | "prev"; from: number; to: number; active: boolean; } | null>(null);
   
+  // 👑 出血線預設顯示
   const [showAlbumCropLines, setShowAlbumCropLines] = useState(true);
   const [showMerchCropLines, setShowMerchCropLines] = useState(true);
   
@@ -607,7 +606,7 @@ export default function App() {
   const isBackCoverView = albumSpreadIndex === maxSpreads && isCurrentViewSingle && !flipState;
   const containerClasses = `album-book-container ${isCoverView ? 'is-front-cover' : ''} ${isBackCoverView ? 'is-back-cover' : ''}`;
 
-  // 👑 智能圖像渲染引擎
+  // 👑 智能圖像渲染引擎 (完美消除白邊)
   const renderPageInner = (photo: Photo | null, pageIdx: number, side: "left" | "right") => {
     if (!photo) return <div className="blank-page">Blank Page 留白</div>;
     const isSingle = checkIsSinglePage(photo, pageIdx, albumPhotos.length);
