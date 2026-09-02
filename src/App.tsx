@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 const API_URL = "https://script.google.com/macros/s/AKfycbwo8DNCpq7pXP8yH7QqNgo33vNWEfpjmpbhwqiO4-nMulEWQpCjk0M8WjyjNcy0Gy-SHQ/exec";
 
 // ==========================================
-// 🛠️ 核心樣式 (Universal Scrollable & Responsive Engine)
+// 🛠️ 核心樣式 (Pixel-Perfect Proportion Engine)
 // ==========================================
 const GLOBAL_STYLES = `
   * { box-sizing: border-box; margin: 0; padding: 0; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; }
@@ -41,7 +41,7 @@ const GLOBAL_STYLES = `
   .client-link-text { word-break: break-all; color: #187880; font-size: 0.95rem; font-weight: 500; background: #ffffff; padding: 12px; border-radius: 4px; margin-bottom: 15px; user-select: all; letter-spacing: 0.5px; border: 1px solid #E5E9EA; }
   .btn-copy { flex: 1; padding: 12px; background: #187880; color: white; border: none; border-radius: 4px; font-weight: 500; cursor: pointer; transition: 0.2s; }
   .btn-copy:hover { background: #136066; }
-  .btn-preview { flex: 1; padding: 12px; background: transparent; color: #187880; border: 1px solid #187880; border-radius: 4px; font-weight: 500; cursor: pointer; transition: 0.2s; }
+  .btn-preview { flex: 1; padding: 12px; background: transparent; color: #187880; border: 1px solid #187880; border-radius: 4px; font-weight: 500; cursor: pointer; transition: 0.2s; display: inline-flex; justify-content: center; align-items: center; text-decoration: none;}
   .btn-preview:hover { background: rgba(24, 120, 128, 0.05); }
 
   .app-grid-shell { 
@@ -114,7 +114,7 @@ const GLOBAL_STYLES = `
   .crop-toggle-btn-inline.active { background: #ff4d4f; color: #fff; border-color: #ff4d4f; }
   .crop-toggle-btn-inline.active-blue { background: #187880; color: #fff; border-color: #187880; }
 
-  /* 👑 精準對齊圖片內縮邊界的裁切線引擎 */
+  /* 裁切線樣式 */
   .crop-line-overlay { position: absolute; border: 1.5px dashed rgba(255, 77, 79, 0.9); z-index: 50; pointer-events: none; display: flex; align-items: flex-start; justify-content: flex-end; padding: 6px; transition: opacity 0.3s; }
   .crop-line-overlay.blue-line { border-color: rgba(24, 120, 128, 0.9); }
   
@@ -189,9 +189,6 @@ const GLOBAL_STYLES = `
   .modal-copy-btn:hover { background: #136066; color: #fff; }
   .modal-copy-btn.outline:hover { background: rgba(24, 120, 128, 0.08); color: #187880; }
 
-  /* ==========================================
-     📱 手機版專屬適配
-     ========================================== */
   @media (max-width: 768px) {
     .header-bar { padding: 12px 15px; flex-wrap: wrap; gap: 8px; }
     .brand-logo-text-small { font-size: 1.1rem; }
@@ -561,9 +558,9 @@ export default function App() {
                   <button className="btn-copy" onClick={copyGeneratedLink}>
                     {isCopied ? "✓ 已複製連結" : "📋 複製給客人"}
                   </button>
-                  <button className="btn-preview" onClick={() => window.open(generatedLink, '_blank')}>
+                  <a href={generatedLink} target="_blank" rel="noopener noreferrer" className="btn-preview">
                     👁️ 預覽畫面
-                  </button>
+                  </a>
                 </div>
               </div>
             )}
@@ -594,16 +591,16 @@ export default function App() {
     baseRightIndex = flipState.direction === "next" ? flipState.to : flipState.from;
   }
 
-  // 👑 印刷級正向內縮引擎：相冊內縮 4mm (正值 4%)，周邊商品內縮 8mm (正值 8%)
-  const isCurrentViewSingle = checkIsSinglePage(albumPhotos[albumSpreadIndex], albumSpreadIndex, albumPhotos.length);
-  const albumOffset = "4%"; 
-  const merchOffset = "8%";  
+  // 👑 【精準微調區】：請在此更改數字，直到虛線完全覆蓋您的紅線為止！
+  const ALBUM_CROP_PERCENT = "1.5%"; // 相冊內縮比例
+  const MERCH_CROP_PERCENT = "3.0%"; // 周邊商品內縮比例
 
+  const isCurrentViewSingle = checkIsSinglePage(albumPhotos[albumSpreadIndex], albumSpreadIndex, albumPhotos.length);
   const albumCropLineStyle = isCurrentViewSingle 
     ? (albumSpreadIndex === 0 
-        ? { top: albumOffset, bottom: albumOffset, left: `calc(50% + ${albumOffset})`, right: albumOffset } 
-        : { top: albumOffset, bottom: albumOffset, left: albumOffset, right: `calc(50% + ${albumOffset})` }) 
-    : { top: albumOffset, bottom: albumOffset, left: albumOffset, right: albumOffset };
+        ? { top: ALBUM_CROP_PERCENT, bottom: ALBUM_CROP_PERCENT, left: `calc(50% + ${ALBUM_CROP_PERCENT})`, right: ALBUM_CROP_PERCENT } 
+        : { top: ALBUM_CROP_PERCENT, bottom: ALBUM_CROP_PERCENT, left: ALBUM_CROP_PERCENT, right: `calc(50% + ${ALBUM_CROP_PERCENT})` }) 
+    : { top: ALBUM_CROP_PERCENT, bottom: ALBUM_CROP_PERCENT, left: ALBUM_CROP_PERCENT, right: ALBUM_CROP_PERCENT };
 
   let containerTransform = "translateX(0%)";
   if (currentView === 'album') {
@@ -710,7 +707,6 @@ export default function App() {
                 className={containerClasses} 
                 style={{ aspectRatio: dynamicAspectRatio, transform: containerTransform }}
               >
-                {/* 👑 相冊：絕對向內縮 4mm (正向偏移 4%) */}
                 {gatePassed && showAlbumCropLines && (
                   <div className="crop-line-overlay" style={albumCropLineStyle}>
                     <span className="crop-warning-text">⚠️ 裁切線 (內縮4mm)</span>
@@ -772,9 +768,8 @@ export default function App() {
             <div className="merch-layout-wrapper">
               <div className="merch-image-box">
                 <div className="merch-img-wrapper">
-                   {/* 👑 周邊商品：絕對向內縮 8mm (正向偏移 8%) */}
                    {gatePassed && showMerchCropLines && (
-                      <div className="crop-line-overlay blue-line" style={{ top: merchOffset, bottom: merchOffset, left: merchOffset, right: merchOffset, zIndex: 10 }}>
+                      <div className="crop-line-overlay blue-line" style={{ top: MERCH_CROP_PERCENT, bottom: MERCH_CROP_PERCENT, left: MERCH_CROP_PERCENT, right: MERCH_CROP_PERCENT, zIndex: 10 }}>
                         <span className="crop-warning-text blue-badge" style={{ fontSize: '0.65rem', padding: '2px 6px' }}>⚠️ 裁切線 (內縮8mm)</span>
                       </div>
                     )}
