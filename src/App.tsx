@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 const API_URL = "https://script.google.com/macros/s/AKfycbwo8DNCpq7pXP8yH7QqNgo33vNWEfpjmpbhwqiO4-nMulEWQpCjk0M8WjyjNcy0Gy-SHQ/exec";
 
 // ==========================================
-// 🛠️ 核心樣式 (Pixel-Perfect Proportion Engine)
+// 🛠️ 核心樣式 (Ultimate Render-Safe Engine)
 // ==========================================
 const GLOBAL_STYLES = `
   * { box-sizing: border-box; margin: 0; padding: 0; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; }
@@ -113,8 +113,20 @@ const GLOBAL_STYLES = `
   .crop-toggle-btn-inline:hover { background: rgba(24, 120, 128, 0.05); }
   .crop-toggle-btn-inline.active { background: #ff4d4f; color: #fff; border-color: #ff4d4f; }
 
-  /* 裁切線樣式 (全站統一為警戒紅) */
-  .crop-line-overlay { position: absolute; border: 1.5px dashed rgba(255, 77, 79, 0.9); z-index: 50; pointer-events: none; display: flex; align-items: flex-start; justify-content: flex-end; padding: 6px; transition: opacity 0.3s; }
+  /* 👑 強制渲染防護：加強為 2px，並使用 translateZ(0) 強制硬體獨立圖層渲染，解決 iOS 左右線條消失 Bug */
+  .crop-line-overlay { 
+    position: absolute; 
+    border: 2px dashed rgba(255, 77, 79, 0.9); 
+    z-index: 500; 
+    pointer-events: none; 
+    display: flex; 
+    align-items: flex-start; 
+    justify-content: flex-end; 
+    padding: 6px; 
+    transition: opacity 0.3s; 
+    transform: translateZ(0); 
+  }
+  
   .crop-warning-text { background: rgba(255, 77, 79, 0.95); color: #fff; font-size: 0.65rem; padding: 2px 5px; border-radius: 3px; font-weight: 500; letter-spacing: 1px; pointer-events: auto; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
 
   .album-flipper { position: absolute; top: 0; bottom: 0; width: 50%; transform-style: preserve-3d; z-index: 30; transition: transform 0.8s cubic-bezier(0.645,0.045,0.355,1); }
@@ -185,9 +197,6 @@ const GLOBAL_STYLES = `
   .modal-copy-btn:hover { background: #136066; color: #fff; }
   .modal-copy-btn.outline:hover { background: rgba(24, 120, 128, 0.08); color: #187880; }
 
-  /* ==========================================
-     📱 手機版專屬適配
-     ========================================== */
   @media (max-width: 768px) {
     .header-bar { padding: 12px 15px; flex-wrap: wrap; gap: 8px; }
     .brand-logo-text-small { font-size: 1.1rem; }
@@ -590,10 +599,9 @@ export default function App() {
     baseRightIndex = flipState.direction === "next" ? flipState.to : flipState.from;
   }
 
-  // 👑 【精準微調區】：依據您的要求，相冊左右外推一半，周邊上下左右外推一半
-  const ALBUM_CROP_Y = "1.5%";    // 相冊上下維持
-  const ALBUM_CROP_X = "0.75%";   // 相冊左右向外推一半 (從 1.5% -> 0.75%)
-  const MERCH_CROP_PERCENT = "1.5%"; // 周邊商品上下左右向外推一半 (從 3.0% -> 1.5%)
+  const ALBUM_CROP_Y = "1.5%";    
+  const ALBUM_CROP_X = "0.75%";   
+  const MERCH_CROP_PERCENT = "1.5%"; 
 
   const isCurrentViewSingle = checkIsSinglePage(albumPhotos[albumSpreadIndex], albumSpreadIndex, albumPhotos.length);
   const albumCropLineStyle = isCurrentViewSingle 
@@ -707,11 +715,6 @@ export default function App() {
                 className={containerClasses} 
                 style={{ aspectRatio: dynamicAspectRatio, transform: containerTransform }}
               >
-                {gatePassed && showAlbumCropLines && (
-                  <div className="crop-line-overlay" style={albumCropLineStyle}>
-                    <span className="crop-warning-text">⚠️ 裁切線</span>
-                  </div>
-                )}
 
                 <div className={`album-page-base base-left ${baseLeftIndex === 0 ? "is-cover" : ""}`} style={{ visibility: albumPhotos[baseLeftIndex] ? "visible" : "hidden" }}>
                   {renderPageInner(albumPhotos[baseLeftIndex], baseLeftIndex, "left")}
@@ -729,6 +732,13 @@ export default function App() {
                     <div className={`flipper-face flipper-back ${(flipState.direction === "prev" ? flipState.from : flipState.to) === 0 ? "is-cover" : ""}`}>
                       {renderPageInner(albumPhotos[flipState.to], flipState.to, flipState.direction === "next" ? "left" : "right")}
                     </div>
+                  </div>
+                )}
+                
+                {/* 👑 將裁切線移至 DOM 最後方，確保 100% 覆蓋在圖片上方 */}
+                {gatePassed && showAlbumCropLines && (
+                  <div className="crop-line-overlay" style={albumCropLineStyle}>
+                    <span className="crop-warning-text">⚠️ 裁切線 (內縮4mm)</span>
                   </div>
                 )}
               </div>
@@ -768,12 +778,14 @@ export default function App() {
             <div className="merch-layout-wrapper">
               <div className="merch-image-box">
                 <div className="merch-img-wrapper">
+                   <img src={merchPhotos[merchIndex].url} alt={merchPhotos[merchIndex].name} draggable="false" />
+                   
+                   {/* 👑 將裁切線移至 DOM 最後方，確保 100% 覆蓋在圖片上方 */}
                    {gatePassed && showMerchCropLines && (
-                      <div className="crop-line-overlay" style={{ top: MERCH_CROP_PERCENT, bottom: MERCH_CROP_PERCENT, left: MERCH_CROP_PERCENT, right: MERCH_CROP_PERCENT, zIndex: 10 }}>
-                        <span className="crop-warning-text" style={{ fontSize: '0.65rem', padding: '2px 6px' }}>⚠️ 裁切線</span>
+                      <div className="crop-line-overlay" style={{ top: MERCH_CROP_PERCENT, bottom: MERCH_CROP_PERCENT, left: MERCH_CROP_PERCENT, right: MERCH_CROP_PERCENT }}>
+                        <span className="crop-warning-text">⚠️ 裁切線 (內縮8mm)</span>
                       </div>
                     )}
-                   <img src={merchPhotos[merchIndex].url} alt={merchPhotos[merchIndex].name} draggable="false" />
                 </div>
               </div>
               
