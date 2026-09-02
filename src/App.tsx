@@ -173,7 +173,6 @@ const GLOBAL_STYLES = `
 `;
 
 interface Photo { id: string; name: string; url: string; }
-interface ProductCategory { type: 'album' | 'merch'; name: string; photos: Photo[]; aspectRatio: number; }
 
 export default function App() {
   const [appMode, setAppMode] = useState<'admin' | 'viewer'>('admin');
