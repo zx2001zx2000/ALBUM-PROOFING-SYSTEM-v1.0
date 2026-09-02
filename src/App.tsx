@@ -4,12 +4,11 @@ import React, { useState, useEffect, useRef } from "react";
 const API_URL = "https://script.google.com/macros/s/AKfycbwo8DNCpq7pXP8yH7QqNgo33vNWEfpjmpbhwqiO4-nMulEWQpCjk0M8WjyjNcy0Gy-SHQ/exec";
 
 // ==========================================
-// 🛠️ 核心樣式 (Universal Scrollable & Responsive Engine)
+// 🛠️ 核心樣式 (Pixel-Perfect Crop Lines Engine)
 // ==========================================
 const GLOBAL_STYLES = `
   * { box-sizing: border-box; margin: 0; padding: 0; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; }
   
-  /* 👑 全面解鎖：讓電腦與手機皆支援自然上下滑動，絕不卡死按鈕 */
   body, html { 
     background-color: #F4F7F6; 
     color: #333333; 
@@ -113,9 +112,14 @@ const GLOBAL_STYLES = `
   .crop-toggle-btn-inline { margin-top: 15px; background: #ffffff; color: #187880; border: 1px solid #187880; padding: 8px 18px; border-radius: 20px; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: 0.2s; display: flex; align-items: center; gap: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
   .crop-toggle-btn-inline:hover { background: rgba(24, 120, 128, 0.05); }
   .crop-toggle-btn-inline.active { background: #ff4d4f; color: #fff; border-color: #ff4d4f; }
+  .crop-toggle-btn-inline.active-blue { background: #187880; color: #fff; border-color: #187880; }
 
-  .crop-line-overlay { position: absolute; border: 1.5px dashed rgba(255, 77, 79, 0.9); z-index: 50; pointer-events: none; display: flex; align-items: flex-start; justify-content: flex-end; padding: 10px; transition: opacity 0.3s; }
-  .crop-warning-text { background: rgba(255, 77, 79, 0.95); color: #fff; font-size: 0.7rem; padding: 4px 8px; border-radius: 3px; font-weight: 500; letter-spacing: 1px; pointer-events: auto; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+  /* 👑 精準對齊圖片邊界的裁切線引擎 */
+  .crop-line-overlay { position: absolute; border: 1.5px dashed rgba(255, 77, 79, 0.9); z-index: 50; pointer-events: none; display: flex; align-items: flex-start; justify-content: flex-end; padding: 8px; transition: opacity 0.3s; }
+  .crop-line-overlay.blue-line { border-color: rgba(24, 120, 128, 0.9); }
+  
+  .crop-warning-text { background: rgba(255, 77, 79, 0.95); color: #fff; font-size: 0.65rem; padding: 3px 6px; border-radius: 3px; font-weight: 500; letter-spacing: 1px; pointer-events: auto; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+  .crop-warning-text.blue-badge { background: rgba(24, 120, 128, 0.95); }
 
   .album-flipper { position: absolute; top: 0; bottom: 0; width: 50%; transform-style: preserve-3d; z-index: 30; transition: transform 0.8s cubic-bezier(0.645,0.045,0.355,1); }
   .flipping-next { right: 0; transform-origin: left center; }
@@ -590,15 +594,22 @@ export default function App() {
     baseRightIndex = flipState.direction === "next" ? flipState.to : flipState.from;
   }
 
+  // 👑 完美貼合圖片邊界的相冊裁切線定位
   const isCurrentViewSingle = checkIsSinglePage(albumPhotos[albumSpreadIndex], albumSpreadIndex, albumPhotos.length);
-  const cropMargin = "2.5%"; 
-  const cropCenterMargin = "calc(50% + 2.5%)";
-  
   const albumCropLineStyle = isCurrentViewSingle 
     ? (albumSpreadIndex === 0 
-        ? { top: cropMargin, bottom: cropMargin, left: cropCenterMargin, right: cropMargin } 
-        : { top: cropMargin, bottom: cropMargin, left: cropMargin, right: cropCenterMargin }) 
-    : { top: cropMargin, bottom: cropMargin, left: cropMargin, right: cropMargin };
+        ? { top: '0px', bottom: '0px', left: 'calc(50% + 0px)', right: '0px' } 
+        : { top: '0px', bottom: '0px', left: '0px', right: 'calc(50% + 0px)' }) 
+    : { top: '0px', bottom: '0px', left: '0px', right: '0px' };
+
+  let containerTransform = "translateX(0%)";
+  if (currentView === 'album') {
+    if (albumSpreadIndex === 0 && checkIsSinglePage(albumPhotos[0], 0, albumPhotos.length)) {
+      containerTransform = "translateX(-25%)"; 
+    } else if (albumSpreadIndex === maxSpreads && checkIsSinglePage(albumPhotos[maxSpreads], maxSpreads, albumPhotos.length)) {
+      containerTransform = "translateX(25%)";
+    }
+  }
 
   const isCoverView = albumSpreadIndex === 0 && isCurrentViewSingle && !flipState;
   const isBackCoverView = albumSpreadIndex === maxSpreads && isCurrentViewSingle && !flipState;
@@ -694,8 +705,9 @@ export default function App() {
             <div className="album-layout-wrapper" style={{ maxWidth: `calc(55vh * ${dynamicAspectRatio})` }}>
               <div 
                 className={containerClasses} 
-                style={{ aspectRatio: dynamicAspectRatio }}
+                style={{ aspectRatio: dynamicAspectRatio, transform: containerTransform }}
               >
+                {/* 👑 渲染相冊紅線，直接貼齊書本容器邊緣 */}
                 {gatePassed && showAlbumCropLines && (
                   <div className="crop-line-overlay" style={albumCropLineStyle}>
                     <span className="crop-warning-text">⚠️ 裁切線</span>
@@ -757,9 +769,10 @@ export default function App() {
             <div className="merch-layout-wrapper">
               <div className="merch-image-box">
                 <div className="merch-img-wrapper">
+                   {/* 👑 周邊商品專屬藍線，緊貼圖片邊界 */}
                    {gatePassed && showMerchCropLines && (
-                      <div className="crop-line-overlay" style={{ top: '2.5%', bottom: '2.5%', left: '2.5%', right: '2.5%', zIndex: 10 }}>
-                        <span className="crop-warning-text" style={{ fontSize: '0.65rem', padding: '2px 6px' }}>⚠️ 裁切線</span>
+                      <div className="crop-line-overlay blue-line" style={{ top: '0px', bottom: '0px', left: '0px', right: '0px', zIndex: 10 }}>
+                        <span className="crop-warning-text blue-badge" style={{ fontSize: '0.65rem', padding: '2px 6px' }}>⚠️ 裁切線</span>
                       </div>
                     )}
                    <img src={merchPhotos[merchIndex].url} alt={merchPhotos[merchIndex].name} draggable="false" />
@@ -768,7 +781,7 @@ export default function App() {
               
               {gatePassed && (
                 <button 
-                  className={`crop-toggle-btn-inline ${showMerchCropLines ? 'active' : ''}`} 
+                  className={`crop-toggle-btn-inline active-blue ${showMerchCropLines ? '' : ''}`} 
                   onClick={() => setShowMerchCropLines(!showMerchCropLines)}
                   title="模擬印刷廠的安全裁切範圍"
                 >
