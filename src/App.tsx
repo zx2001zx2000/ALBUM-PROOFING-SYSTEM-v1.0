@@ -4,19 +4,20 @@ import React, { useState, useEffect, useRef } from "react";
 const API_URL = "https://script.google.com/macros/s/AKfycbwo8DNCpq7pXP8yH7QqNgo33vNWEfpjmpbhwqiO4-nMulEWQpCjk0M8WjyjNcy0Gy-SHQ/exec";
 
 // ==========================================
-// 🛠️ 核心樣式 (Ultimate Mobile-Safe Engine)
+// 🛠️ 核心樣式 (Universal Scrollable & Responsive Engine)
 // ==========================================
 const GLOBAL_STYLES = `
   * { box-sizing: border-box; margin: 0; padding: 0; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; }
   
+  /* 👑 全面解鎖：讓電腦與手機皆支援自然上下滑動，絕不卡死按鈕 */
   body, html { 
     background-color: #F4F7F6; 
     color: #333333; 
     width: 100%; 
-    height: 100dvh; 
-    overflow: hidden; 
+    min-height: 100%; 
+    overflow-y: auto; 
+    overflow-x: hidden;
     user-select: none; 
-    -webkit-overflow-scrolling: touch;
   }
   
   .admin-viewport { position: fixed; inset: 0; display: flex; justify-content: center; align-items: center; background: #F4F7F6; z-index: 1000; padding: 20px; }
@@ -48,15 +49,23 @@ const GLOBAL_STYLES = `
     display: flex; 
     flex-direction: column; 
     width: 100%; 
-    height: 100%; 
+    min-height: 100vh; 
     background: #F4F7F6; 
-    padding-top: env(safe-area-inset-top);
-    padding-bottom: env(safe-area-inset-bottom);
-    padding-left: env(safe-area-inset-left);
-    padding-right: env(safe-area-inset-right);
   }
 
-  .header-bar { flex-shrink: 0; padding: 15px 30px; background: #ffffff; border-bottom: 1px solid #E5E9EA; display: flex; justify-content: space-between; align-items: center; z-index: 10; gap: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.02); }
+  .header-bar { 
+    position: sticky; 
+    top: 0; 
+    z-index: 500; 
+    padding: 15px 30px; 
+    background: #ffffff; 
+    border-bottom: 1px solid #E5E9EA; 
+    display: flex; 
+    justify-content: space-between; 
+    align-items: center; 
+    gap: 20px; 
+    box-shadow: 0 2px 10px rgba(0,0,0,0.02); 
+  }
   .brand-logo-text-small { font-family: "Montserrat", sans-serif; font-weight: 700; font-size: 1.2rem; letter-spacing: 2px; color: #187880; white-space: nowrap; }
   
   .view-tabs { display: flex; gap: 10px; overflow-x: auto; flex: 1; justify-content: center; padding-bottom: 2px; }
@@ -66,9 +75,14 @@ const GLOBAL_STYLES = `
   .tab-btn.active { background: rgba(24, 120, 128, 0.08); border-color: #187880; color: #187880; }
 
   .stage-center-area { 
-    flex: 1;
-    min-height: 0; 
-    position: relative; display: flex; justify-content: center; align-items: center; width: 100%; padding: 20px 20px 40px 20px; overflow: hidden; perspective: 2500px; 
+    flex: 1; 
+    position: relative; 
+    display: flex; 
+    justify-content: center; 
+    align-items: center; 
+    width: 100%; 
+    padding: 40px 20px; 
+    perspective: 2500px; 
   }
   
   .nav-btn-floating { position: absolute; top: 50%; transform: translateY(-50%); background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(4px); color: #187880; border: 1px solid #187880; width: 44px; height: 44px; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 1.2rem; font-weight: 300; cursor: pointer; transition: all 0.2s ease; z-index: 150; box-shadow: 0 4px 10px rgba(0,0,0,0.05);}
@@ -118,7 +132,7 @@ const GLOBAL_STYLES = `
   .shadow-left-edge { position: absolute; left: 0; top: 0; bottom: 0; width: 35px; background: linear-gradient(to right, rgba(0,0,0,0.12), transparent); z-index: 10; pointer-events: none; }
   .shadow-right-edge { position: absolute; right: 0; top: 0; bottom: 0; width: 35px; background: linear-gradient(to left, rgba(0,0,0,0.12), transparent); z-index: 10; pointer-events: none; }
 
-  .footer-controls-area { flex-shrink: 0; padding: 0; background: #ffffff; border-top: 1px solid #E5E9EA; display: flex; flex-direction: column; z-index: 100; box-shadow: 0 -5px 20px rgba(0,0,0,0.03); }
+  .footer-controls-area { padding: 0; background: #ffffff; border-top: 1px solid #E5E9EA; display: flex; flex-direction: column; z-index: 100; box-shadow: 0 -5px 20px rgba(0,0,0,0.03); }
   .feedback-section { padding: 15px 30px; display: flex; gap: 20px; align-items: stretch; background: #F4F7F6; border-bottom: 1px solid #E5E9EA; justify-content: center; }
   .feedback-info { width: 220px; display: flex; flex-direction: column; justify-content: center; flex-shrink: 0; }
   .feedback-info h3 { color: #187880; font-size: 0.95rem; margin-bottom: 5px; font-weight: 600;}
@@ -172,18 +186,15 @@ const GLOBAL_STYLES = `
   .modal-copy-btn.outline:hover { background: rgba(24, 120, 128, 0.08); color: #187880; }
 
   /* ==========================================
-     📱 手機版專屬自然滑動防護
+     📱 手機版專屬極致適配
      ========================================== */
   @media (max-width: 768px) {
-    body, html { height: auto !important; min-height: 100% !important; overflow-y: auto !important; overflow-x: hidden !important; }
-    .app-grid-shell { height: auto !important; min-height: 100vh; overflow: visible !important; display: flex; flex-direction: column; }
-    
-    .header-bar { position: sticky; top: 0; z-index: 500; padding: 12px 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); flex-wrap: wrap; gap: 8px; }
+    .header-bar { padding: 12px 15px; flex-wrap: wrap; gap: 8px; }
     .brand-logo-text-small { font-size: 1.1rem; }
     .header-actions { margin-left: auto; }
     .view-tabs { width: 100%; order: 3; justify-content: flex-start; padding-bottom: 5px; }
 
-    .stage-center-area { flex: none; height: auto !important; padding: 40px 10px; margin-bottom: 20px; }
+    .stage-center-area { padding: 30px 10px; }
     .nav-btn-floating { width: 38px; height: 38px; font-size: 1rem; }
     .nav-left { left: 5px; }
     .nav-right { right: 5px; }
@@ -192,7 +203,7 @@ const GLOBAL_STYLES = `
     .crop-toggle-btn-inline { margin-top: 15px; padding: 6px 14px; font-size: 0.8rem; }
     .merch-img-wrapper img { max-height: 50vh; }
 
-    .footer-controls-area { flex: none; margin-top: auto; border-top: 1px solid #ddd; padding-bottom: max(20px, env(safe-area-inset-bottom)); }
+    .footer-controls-area { border-top: 1px solid #ddd; padding-bottom: max(20px, env(safe-area-inset-bottom)); }
     .feedback-section { flex-direction: column; gap: 6px; padding: 15px; }
     .feedback-info { width: 100%; flex-direction: row; justify-content: space-between; align-items: center; }
     .feedback-info h3 { font-size: 0.85rem; margin: 0; }
@@ -579,10 +590,9 @@ export default function App() {
     baseRightIndex = flipState.direction === "next" ? flipState.to : flipState.from;
   }
 
-  // 👑 動態響應式裁切線比例 (使用百分比取代固定 px，徹底解決手機縮放跑位問題)
   const isCurrentViewSingle = checkIsSinglePage(albumPhotos[albumSpreadIndex], albumSpreadIndex, albumPhotos.length);
-  const cropMargin = "1.5%"; 
-  const cropCenterMargin = "calc(50% + 1.5%)";
+  const cropMargin = "2.5%"; 
+  const cropCenterMargin = "calc(50% + 2.5%)";
   
   const albumCropLineStyle = isCurrentViewSingle 
     ? (albumSpreadIndex === 0 
@@ -688,7 +698,7 @@ export default function App() {
               >
                 {gatePassed && showAlbumCropLines && (
                   <div className="crop-line-overlay" style={albumCropLineStyle}>
-                    <span className="crop-warning-text">⚠️ 裁切安全線</span>
+                    <span className="crop-warning-text">⚠️ 裁切線</span>
                   </div>
                 )}
 
@@ -748,7 +758,7 @@ export default function App() {
               <div className="merch-image-box">
                 <div className="merch-img-wrapper">
                    {gatePassed && showMerchCropLines && (
-                      <div className="crop-line-overlay" style={{ top: '1.5%', bottom: '1.5%', left: '1.5%', right: '1.5%', zIndex: 10 }}>
+                      <div className="crop-line-overlay" style={{ top: '2.5%', bottom: '2.5%', left: '2.5%', right: '2.5%', zIndex: 10 }}>
                         <span className="crop-warning-text" style={{ fontSize: '0.65rem', padding: '2px 6px' }}>⚠️ 裁切線</span>
                       </div>
                     )}
