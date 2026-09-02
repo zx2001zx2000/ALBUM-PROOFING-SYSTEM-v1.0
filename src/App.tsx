@@ -4,30 +4,21 @@ import React, { useState, useEffect, useRef } from "react";
 const API_URL = "https://script.google.com/macros/s/AKfycbwo8DNCpq7pXP8yH7QqNgo33vNWEfpjmpbhwqiO4-nMulEWQpCjk0M8WjyjNcy0Gy-SHQ/exec";
 
 // ==========================================
-// 🛠️ 核心樣式 (Desktop App-like, Mobile Scrollable)
+// 🛠️ 核心樣式 (Ultimate Mobile-Safe Engine)
 // ==========================================
 const GLOBAL_STYLES = `
   * { box-sizing: border-box; margin: 0; padding: 0; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; }
   
-  /* 電腦版維持全螢幕鎖定 */
   body, html { 
     background-color: #F4F7F6; 
     color: #333333; 
     width: 100%; 
-    height: 100%; 
+    height: 100dvh; 
     overflow: hidden; 
     user-select: none; 
+    -webkit-overflow-scrolling: touch;
   }
   
-  .app-grid-shell { 
-    display: flex; 
-    flex-direction: column; 
-    width: 100%; 
-    height: 100%; 
-    background: #F4F7F6; 
-  }
-
-  /* 後台登入區 */
   .admin-viewport { position: fixed; inset: 0; display: flex; justify-content: center; align-items: center; background: #F4F7F6; z-index: 1000; padding: 20px; }
   .admin-box { width: 100%; max-width: 500px; padding: 50px 40px; background-color: #ffffff; border-radius: 12px; box-shadow: 0 15px 35px rgba(0,0,0,0.06); text-align: center; border: 1px solid #E5E9EA; }
   .brand-logo-text { font-family: "Montserrat", sans-serif; font-weight: 600; font-size: 2.2rem; letter-spacing: 5px; color: #187880; margin-bottom: 8px; }
@@ -53,6 +44,18 @@ const GLOBAL_STYLES = `
   .btn-preview { flex: 1; padding: 12px; background: transparent; color: #187880; border: 1px solid #187880; border-radius: 4px; font-weight: 500; cursor: pointer; transition: 0.2s; }
   .btn-preview:hover { background: rgba(24, 120, 128, 0.05); }
 
+  .app-grid-shell { 
+    display: flex; 
+    flex-direction: column; 
+    width: 100%; 
+    height: 100%; 
+    background: #F4F7F6; 
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+
   .header-bar { flex-shrink: 0; padding: 15px 30px; background: #ffffff; border-bottom: 1px solid #E5E9EA; display: flex; justify-content: space-between; align-items: center; z-index: 10; gap: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.02); }
   .brand-logo-text-small { font-family: "Montserrat", sans-serif; font-weight: 700; font-size: 1.2rem; letter-spacing: 2px; color: #187880; white-space: nowrap; }
   
@@ -62,7 +65,11 @@ const GLOBAL_STYLES = `
   .tab-btn:hover { border-color: #187880; color: #187880; }
   .tab-btn.active { background: rgba(24, 120, 128, 0.08); border-color: #187880; color: #187880; }
 
-  .stage-center-area { flex: 1; min-height: 0; position: relative; display: flex; justify-content: center; align-items: center; width: 100%; padding: 20px 20px 40px 20px; overflow: hidden; perspective: 2500px; }
+  .stage-center-area { 
+    flex: 1;
+    min-height: 0; 
+    position: relative; display: flex; justify-content: center; align-items: center; width: 100%; padding: 20px 20px 40px 20px; overflow: hidden; perspective: 2500px; 
+  }
   
   .nav-btn-floating { position: absolute; top: 50%; transform: translateY(-50%); background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(4px); color: #187880; border: 1px solid #187880; width: 44px; height: 44px; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 1.2rem; font-weight: 300; cursor: pointer; transition: all 0.2s ease; z-index: 150; box-shadow: 0 4px 10px rgba(0,0,0,0.05);}
   .nav-btn-floating:hover:not(:disabled) { background: #187880; color: #fff; transform: translateY(-50%) scale(1.05); box-shadow: 0 6px 15px rgba(24, 120, 128, 0.2);}
@@ -93,7 +100,7 @@ const GLOBAL_STYLES = `
   .crop-toggle-btn-inline:hover { background: rgba(24, 120, 128, 0.05); }
   .crop-toggle-btn-inline.active { background: #ff4d4f; color: #fff; border-color: #ff4d4f; }
 
-  .crop-line-overlay { position: absolute; border: 1px dashed rgba(255, 77, 79, 0.9); z-index: 50; pointer-events: none; display: flex; align-items: flex-start; justify-content: flex-end; padding: 10px; transition: opacity 0.3s; }
+  .crop-line-overlay { position: absolute; border: 1.5px dashed rgba(255, 77, 79, 0.9); z-index: 50; pointer-events: none; display: flex; align-items: flex-start; justify-content: flex-end; padding: 10px; transition: opacity 0.3s; }
   .crop-warning-text { background: rgba(255, 77, 79, 0.95); color: #fff; font-size: 0.7rem; padding: 4px 8px; border-radius: 3px; font-weight: 500; letter-spacing: 1px; pointer-events: auto; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
 
   .album-flipper { position: absolute; top: 0; bottom: 0; width: 50%; transform-style: preserve-3d; z-index: 30; transition: transform 0.8s cubic-bezier(0.645,0.045,0.355,1); }
@@ -136,7 +143,6 @@ const GLOBAL_STYLES = `
   .logout-btn { background: transparent; color: #666; border: 1px solid #ccc; padding: 6px 16px; border-radius: 20px; cursor: pointer; transition: 0.2s; font-size: 0.85rem; font-weight: 600; white-space: nowrap;}
   .logout-btn:hover { color: #187880; border-color: #187880; }
 
-  /* Modal 樣式 */
   .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); display: flex; justify-content: center; align-items: center; z-index: 9999; padding: 15px; }
   .final-modal-box { display: flex; flex-direction: column; background: #ffffff; border-top: 5px solid #187880; padding: 30px; border-radius: 12px; width: 100%; max-width: 680px; max-height: 85vh; box-shadow: 0 25px 60px rgba(0,0,0,0.2); }
   .brand-title { flex-shrink: 0; color: #187880; font-size: 1.6rem; text-align: center; }
@@ -166,45 +172,18 @@ const GLOBAL_STYLES = `
   .modal-copy-btn.outline:hover { background: rgba(24, 120, 128, 0.08); color: #187880; }
 
   /* ==========================================
-     📱 終極防護：手機版改為自然滑動 (Natural Scroll)
+     📱 手機版專屬自然滑動防護
      ========================================== */
   @media (max-width: 768px) {
-    /* 👑 1. 徹底解除手機版的高度鎖定，允許自然上下滑動 */
-    body, html {
-      height: auto !important;
-      min-height: 100% !important;
-      overflow-y: auto !important;
-      overflow-x: hidden !important;
-    }
+    body, html { height: auto !important; min-height: 100% !important; overflow-y: auto !important; overflow-x: hidden !important; }
+    .app-grid-shell { height: auto !important; min-height: 100vh; overflow: visible !important; display: flex; flex-direction: column; }
     
-    .app-grid-shell {
-      height: auto !important;
-      min-height: 100vh;
-      overflow: visible !important;
-      display: flex;
-      flex-direction: column;
-    }
-
-    /* 👑 2. 標頭改為黏性定位，往下滑時依然在最上面 */
-    .header-bar {
-      position: sticky;
-      top: 0;
-      z-index: 500;
-      padding: 12px 15px;
-      box-shadow: 0 4px 15px rgba(0,0,0,0.05);
-      flex-wrap: wrap; gap: 8px;
-    }
+    .header-bar { position: sticky; top: 0; z-index: 500; padding: 12px 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); flex-wrap: wrap; gap: 8px; }
     .brand-logo-text-small { font-size: 1.1rem; }
     .header-actions { margin-left: auto; }
     .view-tabs { width: 100%; order: 3; justify-content: flex-start; padding-bottom: 5px; }
 
-    /* 👑 3. 舞台區解除高度限制，由 3D 書本自然撐開 */
-    .stage-center-area {
-      flex: none;
-      height: auto !important;
-      padding: 40px 10px;
-      margin-bottom: 20px;
-    }
+    .stage-center-area { flex: none; height: auto !important; padding: 40px 10px; margin-bottom: 20px; }
     .nav-btn-floating { width: 38px; height: 38px; font-size: 1rem; }
     .nav-left { left: 5px; }
     .nav-right { right: 5px; }
@@ -213,13 +192,7 @@ const GLOBAL_STYLES = `
     .crop-toggle-btn-inline { margin-top: 15px; padding: 6px 14px; font-size: 0.8rem; }
     .merch-img-wrapper img { max-height: 50vh; }
 
-    /* 👑 4. 下方控制列改為自然排列，自動推到網頁最下方 */
-    .footer-controls-area {
-      flex: none;
-      margin-top: auto; 
-      border-top: 1px solid #ddd;
-      padding-bottom: max(20px, env(safe-area-inset-bottom)); /* 避開 iPhone 底部橫條 */
-    }
+    .footer-controls-area { flex: none; margin-top: auto; border-top: 1px solid #ddd; padding-bottom: max(20px, env(safe-area-inset-bottom)); }
     .feedback-section { flex-direction: column; gap: 6px; padding: 15px; }
     .feedback-info { width: 100%; flex-direction: row; justify-content: space-between; align-items: center; }
     .feedback-info h3 { font-size: 0.85rem; margin: 0; }
@@ -235,7 +208,6 @@ const GLOBAL_STYLES = `
     .page-indicator { font-size: 0.85rem; text-align: left; }
     .finish-btn { padding: 10px 18px; font-size: 0.9rem; min-width: 90px; }
 
-    /* 👑 5. Modal 視窗嚴格限制高度 75vh，避開所有 Safari 導覽列 */
     .final-modal-box { padding: 25px 20px; max-height: 75vh; }
     .brand-title { font-size: 1.3rem !important; }
     .legal-content-wrapper { margin: 15px 0; gap: 8px; }
@@ -607,12 +579,16 @@ export default function App() {
     baseRightIndex = flipState.direction === "next" ? flipState.to : flipState.from;
   }
 
+  // 👑 動態響應式裁切線比例 (使用百分比取代固定 px，徹底解決手機縮放跑位問題)
   const isCurrentViewSingle = checkIsSinglePage(albumPhotos[albumSpreadIndex], albumSpreadIndex, albumPhotos.length);
+  const cropMargin = "1.5%"; 
+  const cropCenterMargin = "calc(50% + 1.5%)";
+  
   const albumCropLineStyle = isCurrentViewSingle 
     ? (albumSpreadIndex === 0 
-        ? { top: '9px', bottom: '9px', left: 'calc(50% + 18px)', right: '18px' } 
-        : { top: '9px', bottom: '9px', left: '18px', right: 'calc(50% + 18px)' }) 
-    : { top: '9px', bottom: '9px', left: '9px', right: '9px' };
+        ? { top: cropMargin, bottom: cropMargin, left: cropCenterMargin, right: cropMargin } 
+        : { top: cropMargin, bottom: cropMargin, left: cropMargin, right: cropCenterMargin }) 
+    : { top: cropMargin, bottom: cropMargin, left: cropMargin, right: cropMargin };
 
   const isCoverView = albumSpreadIndex === 0 && isCurrentViewSingle && !flipState;
   const isBackCoverView = albumSpreadIndex === maxSpreads && isCurrentViewSingle && !flipState;
@@ -710,7 +686,6 @@ export default function App() {
                 className={containerClasses} 
                 style={{ aspectRatio: dynamicAspectRatio }}
               >
-                {/* 👑 修正點 2：在 gatePassed (聲明已同意) 之後才顯示紅框，並把文字變短 */}
                 {gatePassed && showAlbumCropLines && (
                   <div className="crop-line-overlay" style={albumCropLineStyle}>
                     <span className="crop-warning-text">⚠️ 裁切安全線</span>
@@ -773,7 +748,7 @@ export default function App() {
               <div className="merch-image-box">
                 <div className="merch-img-wrapper">
                    {gatePassed && showMerchCropLines && (
-                      <div className="crop-line-overlay" style={{ top: '6px', bottom: '6px', left: '6px', right: '6px', zIndex: 10 }}>
+                      <div className="crop-line-overlay" style={{ top: '1.5%', bottom: '1.5%', left: '1.5%', right: '1.5%', zIndex: 10 }}>
                         <span className="crop-warning-text" style={{ fontSize: '0.65rem', padding: '2px 6px' }}>⚠️ 裁切線</span>
                       </div>
                     )}
@@ -873,7 +848,6 @@ export default function App() {
           <div className="final-modal-box">
             <h2 className="brand-title">Copyright Notice<br/>著作權聲明</h2>
             
-            {/* 👑 修正點 3：只有這個區塊可以上下滑動，標題與按鈕絕對固定 */}
             <div className="legal-content-wrapper">
               <div className="legal-item">
                 <span className="legal-icon">📌</span>
