@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 const API_URL = "https://script.google.com/macros/s/AKfycbwo8DNCpq7pXP8yH7QqNgo33vNWEfpjmpbhwqiO4-nMulEWQpCjk0M8WjyjNcy0Gy-SHQ/exec";
 
 // ==========================================
-// 🛠️ 核心樣式 (Pixel-Perfect Crop Lines Engine)
+// 🛠️ 核心樣式 (Universal Scrollable & Responsive Engine)
 // ==========================================
 const GLOBAL_STYLES = `
   * { box-sizing: border-box; margin: 0; padding: 0; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; }
@@ -114,11 +114,11 @@ const GLOBAL_STYLES = `
   .crop-toggle-btn-inline.active { background: #ff4d4f; color: #fff; border-color: #ff4d4f; }
   .crop-toggle-btn-inline.active-blue { background: #187880; color: #fff; border-color: #187880; }
 
-  /* 👑 精準對齊圖片邊界的裁切線引擎 */
-  .crop-line-overlay { position: absolute; border: 1.5px dashed rgba(255, 77, 79, 0.9); z-index: 50; pointer-events: none; display: flex; align-items: flex-start; justify-content: flex-end; padding: 8px; transition: opacity 0.3s; }
+  /* 👑 精準對齊圖片內縮邊界的裁切線引擎 */
+  .crop-line-overlay { position: absolute; border: 1.5px dashed rgba(255, 77, 79, 0.9); z-index: 50; pointer-events: none; display: flex; align-items: flex-start; justify-content: flex-end; padding: 6px; transition: opacity 0.3s; }
   .crop-line-overlay.blue-line { border-color: rgba(24, 120, 128, 0.9); }
   
-  .crop-warning-text { background: rgba(255, 77, 79, 0.95); color: #fff; font-size: 0.65rem; padding: 3px 6px; border-radius: 3px; font-weight: 500; letter-spacing: 1px; pointer-events: auto; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+  .crop-warning-text { background: rgba(255, 77, 79, 0.95); color: #fff; font-size: 0.65rem; padding: 2px 5px; border-radius: 3px; font-weight: 500; letter-spacing: 1px; pointer-events: auto; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
   .crop-warning-text.blue-badge { background: rgba(24, 120, 128, 0.95); }
 
   .album-flipper { position: absolute; top: 0; bottom: 0; width: 50%; transform-style: preserve-3d; z-index: 30; transition: transform 0.8s cubic-bezier(0.645,0.045,0.355,1); }
@@ -190,7 +190,7 @@ const GLOBAL_STYLES = `
   .modal-copy-btn.outline:hover { background: rgba(24, 120, 128, 0.08); color: #187880; }
 
   /* ==========================================
-     📱 手機版專屬極致適配
+     📱 手機版專屬適配
      ========================================== */
   @media (max-width: 768px) {
     .header-bar { padding: 12px 15px; flex-wrap: wrap; gap: 8px; }
@@ -594,13 +594,16 @@ export default function App() {
     baseRightIndex = flipState.direction === "next" ? flipState.to : flipState.from;
   }
 
-  // 👑 完美貼合圖片邊界的相冊裁切線定位
+  // 👑 印刷級正向內縮引擎：相冊內縮 4mm (正值 4%)，周邊商品內縮 8mm (正值 8%)
   const isCurrentViewSingle = checkIsSinglePage(albumPhotos[albumSpreadIndex], albumSpreadIndex, albumPhotos.length);
+  const albumOffset = "4%"; 
+  const merchOffset = "8%";  
+
   const albumCropLineStyle = isCurrentViewSingle 
     ? (albumSpreadIndex === 0 
-        ? { top: '0px', bottom: '0px', left: 'calc(50% + 0px)', right: '0px' } 
-        : { top: '0px', bottom: '0px', left: '0px', right: 'calc(50% + 0px)' }) 
-    : { top: '0px', bottom: '0px', left: '0px', right: '0px' };
+        ? { top: albumOffset, bottom: albumOffset, left: `calc(50% + ${albumOffset})`, right: albumOffset } 
+        : { top: albumOffset, bottom: albumOffset, left: albumOffset, right: `calc(50% + ${albumOffset})` }) 
+    : { top: albumOffset, bottom: albumOffset, left: albumOffset, right: albumOffset };
 
   let containerTransform = "translateX(0%)";
   if (currentView === 'album') {
@@ -707,10 +710,10 @@ export default function App() {
                 className={containerClasses} 
                 style={{ aspectRatio: dynamicAspectRatio, transform: containerTransform }}
               >
-                {/* 👑 渲染相冊紅線，直接貼齊書本容器邊緣 */}
+                {/* 👑 相冊：絕對向內縮 4mm (正向偏移 4%) */}
                 {gatePassed && showAlbumCropLines && (
                   <div className="crop-line-overlay" style={albumCropLineStyle}>
-                    <span className="crop-warning-text">⚠️ 裁切線</span>
+                    <span className="crop-warning-text">⚠️ 裁切線 (內縮4mm)</span>
                   </div>
                 )}
 
@@ -769,10 +772,10 @@ export default function App() {
             <div className="merch-layout-wrapper">
               <div className="merch-image-box">
                 <div className="merch-img-wrapper">
-                   {/* 👑 周邊商品專屬藍線，緊貼圖片邊界 */}
+                   {/* 👑 周邊商品：絕對向內縮 8mm (正向偏移 8%) */}
                    {gatePassed && showMerchCropLines && (
-                      <div className="crop-line-overlay blue-line" style={{ top: '0px', bottom: '0px', left: '0px', right: '0px', zIndex: 10 }}>
-                        <span className="crop-warning-text blue-badge" style={{ fontSize: '0.65rem', padding: '2px 6px' }}>⚠️ 裁切線</span>
+                      <div className="crop-line-overlay blue-line" style={{ top: merchOffset, bottom: merchOffset, left: merchOffset, right: merchOffset, zIndex: 10 }}>
+                        <span className="crop-warning-text blue-badge" style={{ fontSize: '0.65rem', padding: '2px 6px' }}>⚠️ 裁切線 (內縮8mm)</span>
                       </div>
                     )}
                    <img src={merchPhotos[merchIndex].url} alt={merchPhotos[merchIndex].name} draggable="false" />
