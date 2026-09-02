@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 const API_URL = "https://script.google.com/macros/s/AKfycbwo8DNCpq7pXP8yH7QqNgo33vNWEfpjmpbhwqiO4-nMulEWQpCjk0M8WjyjNcy0Gy-SHQ/exec";
 
 // ==========================================
-// 🛠️ 核心樣式 (Ultimate Render-Safe Engine)
+// 🛠️ 核心樣式 (Pixel-Perfect Proportion Engine)
 // ==========================================
 const GLOBAL_STYLES = `
   * { box-sizing: border-box; margin: 0; padding: 0; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; }
@@ -80,8 +80,26 @@ const GLOBAL_STYLES = `
     justify-content: center; 
     align-items: center; 
     width: 100%; 
-    padding: 40px 20px; 
+    padding: 50px 20px 40px 20px; /* 加大上方 padding 給標題空間 */
     perspective: 2500px; 
+  }
+
+  /* 👑 置頂標題指示器 */
+  .stage-top-indicator {
+    position: absolute;
+    top: 15px;
+    left: 0;
+    width: 100%;
+    text-align: center;
+    color: #187880;
+    font-weight: 700;
+    font-size: 1.05rem;
+    letter-spacing: 1px;
+    z-index: 100;
+    padding: 0 60px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis; /* 防止過長檔名破版 */
   }
   
   .nav-btn-floating { position: absolute; top: 50%; transform: translateY(-50%); background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(4px); color: #187880; border: 1px solid #187880; width: 44px; height: 44px; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 1.2rem; font-weight: 300; cursor: pointer; transition: all 0.2s ease; z-index: 150; box-shadow: 0 4px 10px rgba(0,0,0,0.05);}
@@ -113,20 +131,8 @@ const GLOBAL_STYLES = `
   .crop-toggle-btn-inline:hover { background: rgba(24, 120, 128, 0.05); }
   .crop-toggle-btn-inline.active { background: #ff4d4f; color: #fff; border-color: #ff4d4f; }
 
-  /* 👑 強制渲染防護：加強為 2px，並使用 translateZ(0) 強制硬體獨立圖層渲染，解決 iOS 左右線條消失 Bug */
-  .crop-line-overlay { 
-    position: absolute; 
-    border: 2px dashed rgba(255, 77, 79, 0.9); 
-    z-index: 500; 
-    pointer-events: none; 
-    display: flex; 
-    align-items: flex-start; 
-    justify-content: flex-end; 
-    padding: 6px; 
-    transition: opacity 0.3s; 
-    transform: translateZ(0); 
-  }
-  
+  /* 裁切線樣式 */
+  .crop-line-overlay { position: absolute; border: 1.5px dashed rgba(255, 77, 79, 0.9); z-index: 50; pointer-events: none; display: flex; align-items: flex-start; justify-content: flex-end; padding: 6px; transition: opacity 0.3s; }
   .crop-warning-text { background: rgba(255, 77, 79, 0.95); color: #fff; font-size: 0.65rem; padding: 2px 5px; border-radius: 3px; font-weight: 500; letter-spacing: 1px; pointer-events: auto; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
 
   .album-flipper { position: absolute; top: 0; bottom: 0; width: 50%; transform-style: preserve-3d; z-index: 30; transition: transform 0.8s cubic-bezier(0.645,0.045,0.355,1); }
@@ -159,11 +165,8 @@ const GLOBAL_STYLES = `
   .save-status { font-size: 0.75rem; color: #187880; opacity: 0; transition: opacity 0.3s; margin-top: 5px; font-weight: 600;}
   .save-status.visible { opacity: 1; }
 
-  .navigation-bar { display: flex; justify-content: space-between; align-items: center; padding: 12px 30px; }
-  .spacer-left { flex: 1; }
-  .nav-controls { display: flex; align-items: center; flex: 1; justify-content: center; }
-  .nav-action-right { flex: 1; display: flex; justify-content: flex-end; }
-  .page-indicator { text-align: center; letter-spacing: 1px; color: #187880; font-weight: 700; font-size: 1rem; }
+  /* 底部導覽按鈕極簡化 */
+  .navigation-bar { display: flex; justify-content: flex-end; align-items: center; padding: 12px 30px; }
   .finish-btn { padding: 8px 25px; background: transparent; color: #187880; border: 1px solid #187880; border-radius: 20px; cursor: pointer; font-size: 0.9rem; font-weight: 600; transition: 0.2s; min-width: 120px; }
   .finish-btn:hover { background: rgba(24, 120, 128, 0.1); }
   .logout-btn { background: transparent; color: #666; border: 1px solid #ccc; padding: 6px 16px; border-radius: 20px; cursor: pointer; transition: 0.2s; font-size: 0.85rem; font-weight: 600; white-space: nowrap;}
@@ -203,7 +206,9 @@ const GLOBAL_STYLES = `
     .header-actions { margin-left: auto; }
     .view-tabs { width: 100%; order: 3; justify-content: flex-start; padding-bottom: 5px; }
 
-    .stage-center-area { padding: 30px 10px; }
+    .stage-center-area { padding: 45px 10px 30px 10px; } /* 增加手機端上方留白防重疊 */
+    .stage-top-indicator { top: 12px; font-size: 0.9rem; padding: 0 45px; }
+    
     .nav-btn-floating { width: 38px; height: 38px; font-size: 1rem; }
     .nav-left { left: 5px; }
     .nav-right { right: 5px; }
@@ -221,11 +226,7 @@ const GLOBAL_STYLES = `
     .page-feedback-textarea { height: 60px; padding: 8px; font-size: 0.85rem; }
     .shadow-disclaimer-text { font-size: 0.65rem; margin-top: 4px; }
 
-    .navigation-bar { padding: 15px; flex-direction: row; justify-content: space-between; align-items: center; gap: 10px; }
-    .spacer-left { display: none !important; }
-    .nav-controls { flex: 1; justify-content: flex-start; }
-    .nav-action-right { flex: unset; justify-content: flex-end; }
-    .page-indicator { font-size: 0.85rem; text-align: left; }
+    .navigation-bar { padding: 15px; justify-content: flex-end; }
     .finish-btn { padding: 10px 18px; font-size: 0.9rem; min-width: 90px; }
 
     .final-modal-box { padding: 25px 20px; max-height: 75vh; }
@@ -477,6 +478,11 @@ export default function App() {
     return match ? `Spread ${match[1]} 跨頁` : `Spread ${index} 跨頁`;
   };
 
+  const getStageTitle = () => {
+    if (currentView === 'album') return getAlbumIndicatorLabel();
+    return `📦 ${merchPhotos[merchIndex]?.name.split('.')[0]} (${merchIndex + 1} / ${merchPhotos.length})`;
+  };
+
   const generateFeedbackSummary = () => {
     let summary = "";
     
@@ -701,7 +707,11 @@ export default function App() {
 
         {currentView === 'album' && albumPhotos.length > 0 && (
           <main className="stage-center-area">
-            
+            {/* 👑 專屬置頂標題列 */}
+            <div className="stage-top-indicator" title={getStageTitle()}>
+              {getStageTitle()}
+            </div>
+
             <button 
               className="nav-btn-floating nav-left" 
               onClick={() => handlePageChange(Math.max(0, albumSpreadIndex - 1))} 
@@ -715,7 +725,6 @@ export default function App() {
                 className={containerClasses} 
                 style={{ aspectRatio: dynamicAspectRatio, transform: containerTransform }}
               >
-
                 <div className={`album-page-base base-left ${baseLeftIndex === 0 ? "is-cover" : ""}`} style={{ visibility: albumPhotos[baseLeftIndex] ? "visible" : "hidden" }}>
                   {renderPageInner(albumPhotos[baseLeftIndex], baseLeftIndex, "left")}
                 </div>
@@ -735,7 +744,6 @@ export default function App() {
                   </div>
                 )}
                 
-                {/* 👑 將裁切線移至 DOM 最後方，確保 100% 覆蓋在圖片上方 */}
                 {gatePassed && showAlbumCropLines && (
                   <div className="crop-line-overlay" style={albumCropLineStyle}>
                     <span className="crop-warning-text">⚠️ 裁切線 (內縮4mm)</span>
@@ -766,7 +774,11 @@ export default function App() {
 
         {currentView === 'merch' && merchPhotos.length > 0 && (
           <main className="stage-center-area">
-             
+             {/* 👑 專屬置頂標題列 */}
+             <div className="stage-top-indicator" title={getStageTitle()}>
+              {getStageTitle()}
+            </div>
+
             <button 
               className="nav-btn-floating nav-left" 
               onClick={() => setMerchIndex(prev => Math.max(0, prev - 1))} 
@@ -780,7 +792,6 @@ export default function App() {
                 <div className="merch-img-wrapper">
                    <img src={merchPhotos[merchIndex].url} alt={merchPhotos[merchIndex].name} draggable="false" />
                    
-                   {/* 👑 將裁切線移至 DOM 最後方，確保 100% 覆蓋在圖片上方 */}
                    {gatePassed && showMerchCropLines && (
                       <div className="crop-line-overlay" style={{ top: MERCH_CROP_PERCENT, bottom: MERCH_CROP_PERCENT, left: MERCH_CROP_PERCENT, right: MERCH_CROP_PERCENT }}>
                         <span className="crop-warning-text">⚠️ 裁切線 (內縮8mm)</span>
@@ -823,7 +834,7 @@ export default function App() {
               <div className="feedback-input-container">
                 <textarea 
                   className="page-feedback-textarea"
-                  placeholder={`請輸入針對「${getAlbumIndicatorLabel()}」的修改建議... (若無須修改請留白，翻頁會自動存檔)`}
+                  placeholder={`請輸入修改建議... (若無須修改請留白，翻頁會自動存檔)`}
                   value={(allFeedbacks['album'] || {})[albumSpreadIndex] || ''}
                   onChange={(e) => handleFeedbackChange(albumSpreadIndex.toString(), e.target.value)}
                   onBlur={triggerSaveIndicator}
@@ -845,7 +856,7 @@ export default function App() {
               <div className="feedback-input-container">
                 <textarea 
                   className="page-feedback-textarea"
-                  placeholder={`請輸入針對「${merchPhotos[merchIndex].name.split('.')[0]}」的修改建議... (若無須修改請留白，切換會自動存檔)`}
+                  placeholder={`請輸入修改建議... (若無須修改請留白，切換會自動存檔)`}
                   value={(allFeedbacks['merch'] || {})[merchPhotos[merchIndex].id] || ''}
                   onChange={(e) => handleFeedbackChange(merchPhotos[merchIndex].id, e.target.value)}
                   onBlur={triggerSaveIndicator}
@@ -858,19 +869,8 @@ export default function App() {
           )}
 
           <div className="navigation-bar">
-            <div className="spacer-left"></div>
-            
-            <div className="nav-controls">
-              {currentView === 'album' ? (
-                <div className="page-indicator">{getAlbumIndicatorLabel()}</div>
-              ) : (
-                <div className="page-indicator">📦 {merchPhotos[merchIndex]?.name.split('.')[0]} ({merchIndex + 1} / {merchPhotos.length})</div>
-              )}
-            </div>
-
-            <div className="nav-action-right">
-               <button className="finish-btn" onClick={() => setShowFinalUI(true)}>完成並送出</button>
-            </div>
+             {/* 👑 原本在左下角的標題已移除，此區塊保留完成按鈕，並對齊右側 */}
+             <button className="finish-btn" onClick={() => setShowFinalUI(true)}>完成並送出</button>
           </div>
         </footer>
 
