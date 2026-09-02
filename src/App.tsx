@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 const API_URL = "https://script.google.com/macros/s/AKfycbwo8DNCpq7pXP8yH7QqNgo33vNWEfpjmpbhwqiO4-nMulEWQpCjk0M8WjyjNcy0Gy-SHQ/exec";
 
 // ==========================================
-// 🛠️ 核心樣式 (Fresh & Bright Light Mode UI)
+// 🛠️ 核心樣式 (Fresh & Bright Responsive UI)
 // ==========================================
 const GLOBAL_STYLES = `
   * { box-sizing: border-box; margin: 0; padding: 0; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; }
@@ -100,7 +100,7 @@ const GLOBAL_STYLES = `
   .flipper-face { position: absolute; inset: 0; backface-visibility: hidden; background: #fff; overflow: hidden; display: flex; justify-content: center; align-items: center; }
   .flipping-next .flipper-front { border-radius: 0 3px 3px 0; }
   .flipping-next .flipper-back { transform: rotateY(180deg); border-radius: 3px 0 0 3px; }
-  .flipping-prev .flipper-front { border-radius: 3px 0 0 3px; }
+  .flipping-prev .flipper-front { border-radius: 0 3px 3px 0; }
   .flipping-prev .flipper-back { transform: rotateY(-180deg); border-radius: 0 3px 3px 0; }
   .blank-page { width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; color: #999; font-style: italic; background: #f9f9f9; }
   .cover-spine { position: absolute; left: 0; top: 0; bottom: 0; width: 20px; background: linear-gradient(to right, rgba(255,255,255,0.5), rgba(0,0,0,0.04) 35%, rgba(0,0,0,0.08) 100%); z-index: 10; pointer-events: none; }
@@ -147,7 +147,21 @@ const GLOBAL_STYLES = `
 
   /* Modal 樣式 - 明亮版 */
   .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); display: flex; justify-content: center; align-items: center; z-index: 9999; padding: 15px; }
-  .final-modal-box { position: relative; background: #ffffff; border-top: 5px solid #187880; padding: 40px; border-radius: 12px; width: 100%; max-width: 680px; box-shadow: 0 25px 60px rgba(0,0,0,0.2); }
+  
+  /* 👑 修正 Mobile 無法滑動的關鍵 CSS：增加 max-height 與 overflow-y */
+  .final-modal-box { 
+    position: relative; 
+    background: #ffffff; 
+    border-top: 5px solid #187880; 
+    padding: 40px; 
+    border-radius: 12px; 
+    width: 100%; 
+    max-width: 680px; 
+    box-shadow: 0 25px 60px rgba(0,0,0,0.2); 
+    max-height: 85vh; /* 👑 設定視窗最高為螢幕高度的 85% */
+    overflow-y: auto; /* 👑 啟用垂直滑動 */
+  }
+  
   .close-modal-btn { position: absolute; top: 20px; right: 20px; background: transparent; border: none; color: #999; font-size: 22px; cursor: pointer; transition: 0.2s; }
   .close-modal-btn:hover { color: #333; transform: scale(1.1); }
   .legal-content-wrapper { margin: 25px 0; display: flex; flex-direction: column; gap: 12px; }
@@ -170,6 +184,17 @@ const GLOBAL_STYLES = `
   .modal-copy-btn:hover { background: #136066; color: #fff; }
   .modal-copy-btn.outline:hover { background: rgba(24, 120, 128, 0.08); color: #187880; }
   .modal-copy-btn.success { background: #4CAF50 !important; color: #fff !important; border-color: #4CAF50 !important; }
+
+  /* 👑 新增：Mobile 專用精細化樣式 */
+  @media (max-width: 480px) {
+    .final-modal-box { padding: 25px 20px; } /* 👑 縮減視窗邊距 */
+    .brand-title { font-size: 1.3rem; }
+    .legal-content-wrapper { margin: 15px 0; gap: 8px; }
+    .legal-item { flex-direction: column; gap: 8px; padding: 12px; } /* 👑 法條項目改為垂直堆疊 */
+    .legal-icon { font-size: 1.1rem; }
+    .legal-text { font-size: 0.8rem; }
+    .btn-agree { padding: 12px; font-size: 1rem; }
+  }
 `;
 
 interface Photo { id: string; name: string; url: string; }
@@ -561,7 +586,7 @@ export default function App() {
 
     if (isSingle) {
       if (pageIdx === 0) { // 封面顯示在右頁
-        if (side === "left") return null; 
+        if (side === "left") return null; // 完全不渲染左半部內容 (消除白邊)
         return (
           <>
             <div className="cover-spine" />
@@ -575,7 +600,7 @@ export default function App() {
           </>
         );
       } else { // 封底顯示在左頁
-        if (side === "right") return null; 
+        if (side === "right") return null; // 完全不渲染右半部內容 (消除白邊)
         return (
           <>
             <div className="shadow-right-edge" />
