@@ -84,7 +84,6 @@ const GLOBAL_STYLES = `
     perspective: 2500px; 
   }
 
-  /* 👑 置頂標題指示器 */
   .stage-top-indicator {
     position: absolute;
     top: 15px;
@@ -131,7 +130,6 @@ const GLOBAL_STYLES = `
   .crop-toggle-btn-inline:hover { background: rgba(24, 120, 128, 0.05); }
   .crop-toggle-btn-inline.active { background: #ff4d4f; color: #fff; border-color: #ff4d4f; }
 
-  /* 👑 核心防護補回：強制使用 2px 與 GPU 硬體渲染 (translateZ)，徹底解決 iOS 左右線條消失 Bug */
   .crop-line-overlay { 
     position: absolute; 
     border: 2px dashed rgba(255, 77, 79, 0.9); 
@@ -204,10 +202,12 @@ const GLOBAL_STYLES = `
   .card-title { margin-bottom: 8px; font-size: 1.05rem; font-weight: 600; }
   .card-desc { color: #666; font-size: 0.85rem; line-height: 1.5; margin-bottom: 20px; flex: 1; }
   .final-feedback-summary { background: #F4F7F6; color: #333; border: 1px solid #ddd; padding: 15px; border-radius: 6px; margin-bottom: 15px; max-height: 150px; overflow-y: auto; font-size: 0.85rem; white-space: pre-wrap; line-height: 1.5;}
-  .modal-copy-btn { width: 100%; padding: 12px; background: #187880; color: #fff; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; transition: 0.2s; }
-  .modal-copy-btn.outline { background: transparent; color: #187880; border: 1px solid #187880; }
-  .modal-copy-btn:hover { background: #136066; color: #fff; }
-  .modal-copy-btn.outline:hover { background: rgba(24, 120, 128, 0.08); color: #187880; }
+  
+  /* 👑 Line 傳送按鈕樣式優化 */
+  .modal-copy-btn { width: 100%; padding: 12px; background: #00B900; color: #fff; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; transition: 0.2s; display: flex; justify-content: center; align-items: center; gap: 8px; }
+  .modal-copy-btn:hover { background: #009900; color: #fff; }
+  .modal-copy-btn.outline { background: transparent; color: #00B900; border: 1px solid #00B900; }
+  .modal-copy-btn.outline:hover { background: rgba(0, 185, 0, 0.08); color: #00B900; }
 
   @media (max-width: 768px) {
     .header-bar { padding: 12px 15px; flex-wrap: wrap; gap: 8px; }
@@ -274,7 +274,6 @@ export default function App() {
   const [allFeedbacks, setAllFeedbacks] = useState<Record<string, Record<string, string>>>({});
   const [saveIndicator, setSaveIndicator] = useState(false);
   const [showFinalUI, setShowFinalUI] = useState(false);
-  const [copyStatus, setCopyStatus] = useState<"approve" | "feedback" | null>(null);
   const albumRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -508,19 +507,23 @@ export default function App() {
     return summary.trim();
   };
 
-  const handleCopyText = (type: "approve" | "feedback") => {
-    let textToCopy = "";
+  // 👑 一鍵發送至 LINE 客服引擎
+  const handleSendToLine = (type: "approve" | "feedback") => {
+    let textToSend = "";
     if (type === "approve") {
-      textToCopy = `【辰妍國際 校稿確認】\n案號：${albumName}\n狀態：✅ 所有項目皆確認無誤，請安排印務製作，謝謝！`;
+      textToSend = `【辰妍國際 校稿確認】\n案號：${albumName}\n狀態：✅ 所有項目皆確認無誤，請安排印務製作，謝謝！`;
     } else {
       const summary = generateFeedbackSummary();
       if (!summary) { alert("您尚未填寫任何修改需求喔！"); return; }
-      textToCopy = `【辰妍國際 校稿調整需求】\n案號：${albumName}\n狀態：⚠️ 希望微調內容\n\n📌 調整說明：\n${summary}`;
+      textToSend = `【辰妍國際 校稿調整需求】\n案號：${albumName}\n狀態：⚠️ 希望微調內容\n\n📌 調整說明：\n${summary}`;
     }
-    navigator.clipboard.writeText(textToCopy).then(() => {
-      setCopyStatus(type);
-      setTimeout(() => setCopyStatus(null), 3000);
-    });
+
+    // 備用方案：自動複製到剪貼簿，避免少數裝置跳轉失敗
+    navigator.clipboard.writeText(textToSend).catch(() => console.log("Clipboard backup failed"));
+
+    // 跳轉至 LINE App 官方帳號輸入框
+    const lineUrl = `https://line.me/R/oaMessage/@tinycktw/?${encodeURIComponent(textToSend)}`;
+    window.location.href = lineUrl;
   };
 
   if (appMode === 'admin') {
@@ -603,7 +606,6 @@ export default function App() {
     baseRightIndex = flipState.direction === "next" ? flipState.to : flipState.from;
   }
 
-  // 👑 【精準微調區】：相冊上下不變 (1.5%)，左右向外擴張至一半 (0.75%)；周邊商品全向外擴張至一半 (1.5%)
   const ALBUM_CROP_Y = "1.5%";    
   const ALBUM_CROP_X = "0.75%";   
   const MERCH_CROP_PERCENT = "1.5%"; 
@@ -742,10 +744,9 @@ export default function App() {
                   </div>
                 )}
                 
-                {/* 👑 DOM 置頂渲染防護：確保線條不被吃掉 */}
                 {gatePassed && showAlbumCropLines && (
                   <div className="crop-line-overlay" style={albumCropLineStyle}>
-                    <span className="crop-warning-text">⚠️ 裁切線 (內縮4mm)</span>
+                    <span className="crop-warning-text">⚠️ 裁切線</span>
                   </div>
                 )}
               </div>
@@ -790,10 +791,9 @@ export default function App() {
                 <div className="merch-img-wrapper">
                    <img src={merchPhotos[merchIndex].url} alt={merchPhotos[merchIndex].name} draggable="false" />
                    
-                   {/* 👑 DOM 置頂渲染防護：確保線條不被吃掉 */}
                    {gatePassed && showMerchCropLines && (
                       <div className="crop-line-overlay" style={{ top: MERCH_CROP_PERCENT, bottom: MERCH_CROP_PERCENT, left: MERCH_CROP_PERCENT, right: MERCH_CROP_PERCENT }}>
-                        <span className="crop-warning-text">⚠️ 裁切線 (內縮8mm)</span>
+                        <span className="crop-warning-text">⚠️ 裁切線</span>
                       </div>
                     )}
                 </div>
@@ -912,13 +912,16 @@ export default function App() {
           <div className="final-modal-box">
             <button className="close-modal-btn" onClick={() => setShowFinalUI(false)}>✕</button>
             <h2 className="brand-title" style={{ fontSize: '1.4rem' }}>Layout Proofing 校稿結果</h2>
-            <p style={{ color: '#aaa', fontSize: '0.85rem', marginBottom: '10px', textAlign: 'center' }}>點擊按鈕複製訊息，直接貼回與我們的溝通群組中。</p>
+            <p style={{ color: '#aaa', fontSize: '0.85rem', marginBottom: '10px', textAlign: 'center' }}>請點擊按鈕，系統將自動跳轉至 LINE 並為您輸入對應文字。</p>
             
             <div className="action-cards-container">
               <div className="action-card">
                 <h3 className="card-title" style={{ color: '#187880' }}>✅ 選項一：校稿沒有問題</h3>
                 <p className="card-desc">所有項目排版與周邊商品皆確認無誤，請印務團隊照此定稿版本進行製作。</p>
-                <button className={`modal-copy-btn ${copyStatus === "approve" ? "success" : ""}`} onClick={() => handleCopyText("approve")}>{copyStatus === "approve" ? "✓ 已複製！(請貼至群組)" : "📋 校稿無誤，請繼續製作"}</button>
+                {/* 👑 更新為一鍵轉跳 LINE 功能 */}
+                <button className="modal-copy-btn" onClick={() => handleSendToLine("approve")}>
+                  💬 傳送確認訊息至 LINE
+                </button>
               </div>
               
               <div className="action-card">
@@ -935,7 +938,10 @@ export default function App() {
                   </div>
                 )}
                 
-                <button className={`modal-copy-btn outline ${copyStatus === "feedback" ? "success" : ""}`} onClick={() => handleCopyText("feedback")}>{copyStatus === "feedback" ? "✓ 已複製！(請貼至群組)" : "📋 複製調整需求清單"}</button>
+                {/* 👑 更新為一鍵轉跳 LINE 功能 */}
+                <button className="modal-copy-btn outline" onClick={() => handleSendToLine("feedback")}>
+                  💬 傳送調整需求至 LINE
+                </button>
               </div>
             </div>
           </div>
