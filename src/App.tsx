@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 const API_URL = "https://script.google.com/macros/s/AKfycbwo8DNCpq7pXP8yH7QqNgo33vNWEfpjmpbhwqiO4-nMulEWQpCjk0M8WjyjNcy0Gy-SHQ/exec";
 
 // ==========================================
-// 🛠️ 核心樣式 (Pixel-Perfect Proportion + Safari Render Safe Engine)
+// 🛠️ 核心樣式
 // ==========================================
 const GLOBAL_STYLES = `
   * { box-sizing: border-box; margin: 0; padding: 0; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; }
@@ -203,8 +203,7 @@ const GLOBAL_STYLES = `
   .card-desc { color: #666; font-size: 0.85rem; line-height: 1.5; margin-bottom: 20px; flex: 1; }
   .final-feedback-summary { background: #F4F7F6; color: #333; border: 1px solid #ddd; padding: 15px; border-radius: 6px; margin-bottom: 15px; max-height: 150px; overflow-y: auto; font-size: 0.85rem; white-space: pre-wrap; line-height: 1.5;}
   
-  /* 👑 Line 傳送按鈕樣式優化 */
-  .modal-copy-btn { width: 100%; padding: 12px; background: #00B900; color: #fff; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; transition: 0.2s; display: flex; justify-content: center; align-items: center; gap: 8px; }
+  .modal-copy-btn { width: 100%; padding: 12px; background: #00B900; color: #fff; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; transition: 0.2s; display: flex; justify-content: center; align-items: center; gap: 8px; font-size: 0.95rem; }
   .modal-copy-btn:hover { background: #009900; color: #fff; }
   .modal-copy-btn.outline { background: transparent; color: #00B900; border: 1px solid #00B900; }
   .modal-copy-btn.outline:hover { background: rgba(0, 185, 0, 0.08); color: #00B900; }
@@ -274,6 +273,10 @@ export default function App() {
   const [allFeedbacks, setAllFeedbacks] = useState<Record<string, Record<string, string>>>({});
   const [saveIndicator, setSaveIndicator] = useState(false);
   const [showFinalUI, setShowFinalUI] = useState(false);
+  
+  // 👑 新增跳轉狀態管理
+  const [sendingStatus, setSendingStatus] = useState<"approve" | "feedback" | null>(null);
+
   const albumRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -507,8 +510,8 @@ export default function App() {
     return summary.trim();
   };
 
-  // 👑 一鍵發送至 LINE 客服引擎
-  const handleSendToLine = (type: "approve" | "feedback") => {
+  // 👑 升級版 LINE 串接引擎：雙重防護 (先強制複製，後自動跳轉)
+  const handleSendToLine = async (type: "approve" | "feedback") => {
     let textToSend = "";
     if (type === "approve") {
       textToSend = `【辰妍國際 校稿確認】\n案號：${albumName}\n狀態：✅ 所有項目皆確認無誤，請安排印務製作，謝謝！`;
@@ -518,12 +521,21 @@ export default function App() {
       textToSend = `【辰妍國際 校稿調整需求】\n案號：${albumName}\n狀態：⚠️ 希望微調內容\n\n📌 調整說明：\n${summary}`;
     }
 
-    // 備用方案：自動複製到剪貼簿，避免少數裝置跳轉失敗
-    navigator.clipboard.writeText(textToSend).catch(() => console.log("Clipboard backup failed"));
+    setSendingStatus(type);
 
-    // 跳轉至 LINE App 官方帳號輸入框
-    const lineUrl = `https://line.me/R/oaMessage/@tinycktw/?${encodeURIComponent(textToSend)}`;
-    window.location.href = lineUrl;
+    // 第一重防護：嘗試自動複製至剪貼簿
+    try {
+      await navigator.clipboard.writeText(textToSend);
+    } catch (err) {
+      console.log("Clipboard fallback failed");
+    }
+
+    // 第二重防護：延遲跳轉 LINE App，給予使用者提示時間
+    setTimeout(() => {
+      const lineUrl = `https://line.me/R/oaMessage/@tinycktw/?${encodeURIComponent(textToSend)}`;
+      window.location.href = lineUrl;
+      setTimeout(() => setSendingStatus(null), 2000);
+    }, 600);
   };
 
   if (appMode === 'admin') {
@@ -746,7 +758,7 @@ export default function App() {
                 
                 {gatePassed && showAlbumCropLines && (
                   <div className="crop-line-overlay" style={albumCropLineStyle}>
-                    <span className="crop-warning-text">⚠️ 裁切線</span>
+                    <span className="crop-warning-text">⚠️ 裁切線 (內縮4mm)</span>
                   </div>
                 )}
               </div>
@@ -793,7 +805,7 @@ export default function App() {
                    
                    {gatePassed && showMerchCropLines && (
                       <div className="crop-line-overlay" style={{ top: MERCH_CROP_PERCENT, bottom: MERCH_CROP_PERCENT, left: MERCH_CROP_PERCENT, right: MERCH_CROP_PERCENT }}>
-                        <span className="crop-warning-text">⚠️ 裁切線</span>
+                        <span className="crop-warning-text">⚠️ 裁切線 (內縮8mm)</span>
                       </div>
                     )}
                 </div>
@@ -912,15 +924,14 @@ export default function App() {
           <div className="final-modal-box">
             <button className="close-modal-btn" onClick={() => setShowFinalUI(false)}>✕</button>
             <h2 className="brand-title" style={{ fontSize: '1.4rem' }}>Layout Proofing 校稿結果</h2>
-            <p style={{ color: '#aaa', fontSize: '0.85rem', marginBottom: '10px', textAlign: 'center' }}>請點擊按鈕，系統將自動跳轉至 LINE 並為您輸入對應文字。</p>
+            <p style={{ color: '#aaa', fontSize: '0.85rem', marginBottom: '10px', textAlign: 'center' }}>請點擊按鈕，系統將為您跳轉至 LINE。</p>
             
             <div className="action-cards-container">
               <div className="action-card">
                 <h3 className="card-title" style={{ color: '#187880' }}>✅ 選項一：校稿沒有問題</h3>
                 <p className="card-desc">所有項目排版與周邊商品皆確認無誤，請印務團隊照此定稿版本進行製作。</p>
-                {/* 👑 更新為一鍵轉跳 LINE 功能 */}
                 <button className="modal-copy-btn" onClick={() => handleSendToLine("approve")}>
-                  💬 傳送確認訊息至 LINE
+                  {sendingStatus === "approve" ? "✅ 已複製！正在開啟 LINE..." : "💬 傳送確認訊息至 LINE"}
                 </button>
               </div>
               
@@ -938,12 +949,16 @@ export default function App() {
                   </div>
                 )}
                 
-                {/* 👑 更新為一鍵轉跳 LINE 功能 */}
                 <button className="modal-copy-btn outline" onClick={() => handleSendToLine("feedback")}>
-                  💬 傳送調整需求至 LINE
+                  {sendingStatus === "feedback" ? "✅ 已複製！正在開啟 LINE..." : "💬 傳送調整需求至 LINE"}
                 </button>
               </div>
             </div>
+            
+            {/* 👑 電腦版救星防呆提示 */}
+            <p style={{fontSize: '0.75rem', color: '#888', marginTop: '15px', textAlign: 'center'}}>
+              💡 提示：若您的電腦無法自動開啟 LINE，訊息已為您複製完成，請直接前往 LINE 手動貼上。
+            </p>
           </div>
         </div>
       )}
