@@ -1,35 +1,45 @@
 import React, { useState, useEffect, useRef } from "react";
 
-// 👑 辰妍國際專屬 API 金鑰
-const API_URL = "https://script.google.com/macros/s/AKfycbwo8DNCpq7pXP8yH7QqNgo33vNWEfpjmpbhwqiO4-nMulEWQpCjk0M8WjyjNcy0Gy-SHQ/exec";
+// 👑 辰妍國際專屬 API 金鑰（相冊校稿 Apps Script）
+const API_URL = "https://script.google.com/macros/s/AKfycbwvYeDb8KyJid5pxPqEn1S-8TtTnZRMPbrxxqzw4jaryUGd0HRuiRpjX_nxUcWfKv6gHw/exec";
 
 // ==========================================
-// 🛠️ 核心樣式
+// ⚙️ 系統設定（V2）
+// ==========================================
+const LINE_OA_ID = "@tinycktw";
+const DRAFT_PREFIX = "album-proof-draft-";
+const DRAFT_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 草稿保留 30 天
+const BACKUP_WAIT_MS = 8000;                   // 送出時等待雲端同步的上限
+const LINE_SUMMARY_LIMIT = 500;                // LINE 預填摘要字數上限（避免網址過長開不了）
+const USE_FAST_CDN = true;                     // 圖片優先走 Google lh3 CDN，失敗自動退回原網址
+
+// ==========================================
+// 🛠️ 核心樣式（與 V1 完全相同）
 // ==========================================
 const GLOBAL_STYLES = `
   * { box-sizing: border-box; margin: 0; padding: 0; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; }
-  
-  body, html { 
-    background-color: #F4F7F6; 
-    color: #333333; 
-    width: 100%; 
-    min-height: 100%; 
-    overflow-y: auto; 
+
+  body, html {
+    background-color: #F4F7F6;
+    color: #333333;
+    width: 100%;
+    min-height: 100%;
+    overflow-y: auto;
     overflow-x: hidden;
-    user-select: none; 
+    user-select: none;
   }
-  
+
   .admin-viewport { position: fixed; inset: 0; display: flex; justify-content: center; align-items: center; background: #F4F7F6; z-index: 1000; padding: 20px; }
   .admin-box { width: 100%; max-width: 500px; padding: 50px 40px; background-color: #ffffff; border-radius: 12px; box-shadow: 0 15px 35px rgba(0,0,0,0.06); text-align: center; border: 1px solid #E5E9EA; }
   .brand-logo-text { font-family: "Montserrat", sans-serif; font-weight: 600; font-size: 2.2rem; letter-spacing: 5px; color: #187880; margin-bottom: 8px; }
   .brand-subtitle { font-size: 0.75rem; letter-spacing: 3px; color: #888; margin-bottom: 25px; text-transform: uppercase; }
-  
+
   .input-group { margin-bottom: 20px; text-align: left; }
   .input-label { display: block; color: #555; font-size: 0.85rem; margin-bottom: 8px; font-weight: 600; letter-spacing: 1px; }
   .drive-input { width: 100%; padding: 14px 15px; background: #FAFAFA; border: 1px solid #DDDDDD; color: #333333; border-radius: 6px; outline: none; font-size: 0.95rem; transition: all 0.2s ease; }
   .drive-input::placeholder { color: #aaa; }
   .drive-input:focus { background: #ffffff; border-color: #187880; box-shadow: 0 0 0 3px rgba(24, 120, 128, 0.1); }
-  
+
   .btn-generate { width: 100%; padding: 14px; background: #187880; color: #ffffff; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; transition: 0.2s; font-size: 1rem; letter-spacing: 1px; }
   .btn-generate:hover:not(:disabled) { background: #136066; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(24, 120, 128, 0.2); }
   .btn-generate:disabled { background: #e0e0e0; color: #999; cursor: not-allowed; }
@@ -44,44 +54,44 @@ const GLOBAL_STYLES = `
   .btn-preview { flex: 1; padding: 12px; background: transparent; color: #187880; border: 1px solid #187880; border-radius: 4px; font-weight: 500; cursor: pointer; transition: 0.2s; display: inline-flex; justify-content: center; align-items: center; text-decoration: none;}
   .btn-preview:hover { background: rgba(24, 120, 128, 0.05); }
 
-  .app-grid-shell { 
-    display: flex; 
-    flex-direction: column; 
-    width: 100%; 
-    min-height: 100vh; 
-    background: #F4F7F6; 
+  .app-grid-shell {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    min-height: 100vh;
+    background: #F4F7F6;
   }
 
-  .header-bar { 
-    position: sticky; 
-    top: 0; 
-    z-index: 500; 
-    padding: 15px 30px; 
-    background: #ffffff; 
-    border-bottom: 1px solid #E5E9EA; 
-    display: flex; 
-    justify-content: space-between; 
-    align-items: center; 
-    gap: 20px; 
-    box-shadow: 0 2px 10px rgba(0,0,0,0.02); 
+  .header-bar {
+    position: sticky;
+    top: 0;
+    z-index: 500;
+    padding: 15px 30px;
+    background: #ffffff;
+    border-bottom: 1px solid #E5E9EA;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.02);
   }
   .brand-logo-text-small { font-family: "Montserrat", sans-serif; font-weight: 700; font-size: 1.2rem; letter-spacing: 2px; color: #187880; white-space: nowrap; }
-  
+
   .view-tabs { display: flex; gap: 10px; overflow-x: auto; flex: 1; justify-content: center; padding-bottom: 2px; }
   .view-tabs::-webkit-scrollbar { height: 0px; }
   .tab-btn { background: #ffffff; border: 1px solid #ddd; color: #666; padding: 8px 20px; border-radius: 20px; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
   .tab-btn:hover { border-color: #187880; color: #187880; }
   .tab-btn.active { background: rgba(24, 120, 128, 0.08); border-color: #187880; color: #187880; }
 
-  .stage-center-area { 
-    flex: 1; 
-    position: relative; 
-    display: flex; 
-    justify-content: center; 
-    align-items: center; 
-    width: 100%; 
-    padding: 50px 20px 40px 20px; 
-    perspective: 2500px; 
+  .stage-center-area {
+    flex: 1;
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    padding: 50px 20px 40px 20px;
+    perspective: 2500px;
   }
 
   .stage-top-indicator {
@@ -98,9 +108,9 @@ const GLOBAL_STYLES = `
     padding: 0 60px;
     white-space: nowrap;
     overflow: hidden;
-    text-overflow: ellipsis; 
+    text-overflow: ellipsis;
   }
-  
+
   .nav-btn-floating { position: absolute; top: 50%; transform: translateY(-50%); background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(4px); color: #187880; border: 1px solid #187880; width: 44px; height: 44px; border-radius: 50%; display: flex; justify-content: center; align-items: center; font-size: 1.2rem; font-weight: 300; cursor: pointer; transition: all 0.2s ease; z-index: 150; box-shadow: 0 4px 10px rgba(0,0,0,0.05);}
   .nav-btn-floating:hover:not(:disabled) { background: #187880; color: #fff; transform: translateY(-50%) scale(1.05); box-shadow: 0 6px 15px rgba(24, 120, 128, 0.2);}
   .nav-btn-floating:disabled { opacity: 0; pointer-events: none; }
@@ -116,11 +126,11 @@ const GLOBAL_STYLES = `
   .album-book-container.is-front-cover { background: transparent; box-shadow: none; }
   .album-book-container.is-front-cover .base-left { opacity: 0; pointer-events: none; }
   .album-book-container.is-front-cover .base-right { background: #fff; box-shadow: 0 15px 40px rgba(0,0,0,0.12); border-radius: 4px; }
-  
+
   .album-book-container.is-back-cover { background: transparent; box-shadow: none; }
   .album-book-container.is-back-cover .base-right { opacity: 0; pointer-events: none; }
   .album-book-container.is-back-cover .base-left { background: #fff; box-shadow: 0 15px 40px rgba(0,0,0,0.12); border-radius: 4px; }
-  
+
   .merch-layout-wrapper { position: relative; display: flex; flex-direction: column; align-items: flex-end; width: 86vw; max-width: 800px; transition: transform 0.4s ease; }
   .merch-image-box { position: relative; width: 100%; background: #ffffff; padding: 30px; display: flex; justify-content: center; align-items: center; border-radius: 8px; box-shadow: 0 15px 40px rgba(0,0,0,0.08); border: 1px solid #eee; }
   .merch-img-wrapper { position: relative; display: inline-block; max-width: 100%; max-height: 55vh; }
@@ -130,19 +140,19 @@ const GLOBAL_STYLES = `
   .crop-toggle-btn-inline:hover { background: rgba(24, 120, 128, 0.05); }
   .crop-toggle-btn-inline.active { background: #ff4d4f; color: #fff; border-color: #ff4d4f; }
 
-  .crop-line-overlay { 
-    position: absolute; 
-    border: 2px dashed rgba(255, 77, 79, 0.9); 
-    z-index: 500; 
-    pointer-events: none; 
-    display: flex; 
-    align-items: flex-start; 
-    justify-content: flex-end; 
-    padding: 6px; 
-    transition: opacity 0.3s; 
-    transform: translateZ(0); 
+  .crop-line-overlay {
+    position: absolute;
+    border: 2px dashed rgba(255, 77, 79, 0.9);
+    z-index: 500;
+    pointer-events: none;
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-end;
+    padding: 6px;
+    transition: opacity 0.3s;
+    transform: translateZ(0);
   }
-  
+
   .crop-warning-text { background: rgba(255, 77, 79, 0.95); color: #fff; font-size: 0.65rem; padding: 2px 5px; border-radius: 3px; font-weight: 500; letter-spacing: 1px; pointer-events: auto; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
 
   .album-flipper { position: absolute; top: 0; bottom: 0; width: 50%; transform-style: preserve-3d; z-index: 30; transition: transform 0.8s cubic-bezier(0.645,0.045,0.355,1); }
@@ -165,12 +175,12 @@ const GLOBAL_STYLES = `
   .feedback-info { width: 220px; display: flex; flex-direction: column; justify-content: center; flex-shrink: 0; }
   .feedback-info h3 { color: #187880; font-size: 0.95rem; margin-bottom: 5px; font-weight: 600;}
   .feedback-info p { color: #666; font-size: 0.75rem; line-height: 1.4; }
-  
+
   .feedback-input-container { flex: 1; max-width: 800px; display: flex; flex-direction: column; }
   .page-feedback-textarea { width: 100%; background: #ffffff; border: 1px solid #ddd; color: #333333; border-radius: 6px; padding: 12px; font-size: 0.95rem; line-height: 1.5; resize: none; outline: none; transition: 0.2s; height: 75px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);}
   .page-feedback-textarea::placeholder { color: #aaa; }
   .page-feedback-textarea:focus { border-color: #187880; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02), 0 0 0 3px rgba(24, 120, 128, 0.1); }
-  
+
   .shadow-disclaimer-text { color: #888; font-size: 0.75rem; margin-top: 6px; letter-spacing: 0.5px; text-align: center;}
   .save-status { font-size: 0.75rem; color: #187880; opacity: 0; transition: opacity 0.3s; margin-top: 5px; font-weight: 600;}
   .save-status.visible { opacity: 1; }
@@ -182,27 +192,27 @@ const GLOBAL_STYLES = `
   .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); display: flex; justify-content: center; align-items: center; z-index: 9999; padding: 15px; }
   .final-modal-box { display: flex; flex-direction: column; background: #ffffff; border-top: 5px solid #187880; padding: 30px; border-radius: 12px; width: 100%; max-width: 680px; max-height: 85vh; box-shadow: 0 25px 60px rgba(0,0,0,0.2); }
   .brand-title { flex-shrink: 0; color: #187880; font-size: 1.6rem; text-align: center; }
-  
+
   .legal-content-wrapper { flex: 1; min-height: 0; overflow-y: auto; margin: 15px 0; display: flex; flex-direction: column; gap: 12px; padding-right: 5px; }
   .legal-content-wrapper::-webkit-scrollbar { width: 5px; }
   .legal-content-wrapper::-webkit-scrollbar-thumb { background: #ccc; border-radius: 5px; }
-  
+
   .legal-item { display: flex; align-items: flex-start; gap: 12px; text-align: left; background: #F4F7F6; padding: 15px; border-radius: 6px; border-left: 4px solid #187880; }
   .legal-icon { font-size: 1.2rem; }
   .legal-text { font-size: 0.85rem; color: #555; line-height: 1.6; }
-  
+
   .btn-agree { flex-shrink: 0; width: 100%; padding: 14px; background: #187880; color: #fff; border: none; border-radius: 6px; font-weight: 600; font-size: 1.05rem; cursor: pointer; transition: 0.2s; letter-spacing: 1px; }
   .btn-agree:hover { background: #136066; box-shadow: 0 4px 12px rgba(24, 120, 128, 0.2); }
-  
+
   .close-modal-btn { position: absolute; top: 15px; right: 20px; background: transparent; border: none; color: #999; font-size: 22px; cursor: pointer; transition: 0.2s; }
   .close-modal-btn:hover { color: #333; transform: scale(1.1); }
-  
+
   .action-cards-container { display: flex; gap: 20px; margin-top: 10px; overflow-y: auto; max-height: 60vh; padding-right: 5px;}
   .action-card { flex: 1; background: #ffffff; border: 1px solid #E5E9EA; padding: 25px; border-radius: 8px; text-align: left; display: flex; flex-direction: column; box-shadow: 0 4px 15px rgba(0,0,0,0.03); }
   .card-title { margin-bottom: 8px; font-size: 1.05rem; font-weight: 600; }
   .card-desc { color: #666; font-size: 0.85rem; line-height: 1.5; margin-bottom: 20px; flex: 1; }
   .final-feedback-summary { background: #F4F7F6; color: #333; border: 1px solid #ddd; padding: 15px; border-radius: 6px; margin-bottom: 15px; max-height: 150px; overflow-y: auto; font-size: 0.85rem; white-space: pre-wrap; line-height: 1.5;}
-  
+
   .modal-copy-btn { width: 100%; padding: 12px; background: #00B900; color: #fff; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; transition: 0.2s; display: flex; justify-content: center; align-items: center; gap: 8px; font-size: 0.95rem; }
   .modal-copy-btn:hover { background: #009900; color: #fff; }
   .modal-copy-btn.outline { background: transparent; color: #00B900; border: 1px solid #00B900; }
@@ -214,9 +224,9 @@ const GLOBAL_STYLES = `
     .header-actions { margin-left: auto; }
     .view-tabs { width: 100%; order: 3; justify-content: flex-start; padding-bottom: 5px; }
 
-    .stage-center-area { padding: 45px 10px 30px 10px; } 
+    .stage-center-area { padding: 45px 10px 30px 10px; }
     .stage-top-indicator { top: 12px; font-size: 0.9rem; padding: 0 45px; }
-    
+
     .nav-btn-floating { width: 38px; height: 38px; font-size: 1rem; }
     .nav-left { left: 5px; }
     .nav-right { right: 5px; }
@@ -229,7 +239,7 @@ const GLOBAL_STYLES = `
     .feedback-section { flex-direction: column; gap: 6px; padding: 15px; }
     .feedback-info { width: 100%; flex-direction: row; justify-content: space-between; align-items: center; }
     .feedback-info h3 { font-size: 0.85rem; margin: 0; }
-    .feedback-info p { display: none; } 
+    .feedback-info p { display: none; }
     .save-status { margin: 0; font-size: 0.75rem; }
     .page-feedback-textarea { height: 60px; padding: 8px; font-size: 0.85rem; }
     .shadow-disclaimer-text { font-size: 0.65rem; margin-top: 4px; }
@@ -249,7 +259,54 @@ const GLOBAL_STYLES = `
   }
 `;
 
-interface Photo { id: string; name: string; url: string; }
+interface Photo { id: string; name: string; url: string; mimeType?: string; }
+
+// ==========================================
+// 🧰 工具函式（V2 新增）
+// ==========================================
+const IMAGE_EXT = /\.(jpe?g|png|webp|gif|heic|heif|tiff?)$/i;
+const isImageFile = (f: Photo) =>
+  f.mimeType ? f.mimeType.indexOf("image/") === 0 : IMAGE_EXT.test(f.name || "");
+
+const naturalCompare = (a = "", b = "") =>
+  a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+
+const fastUrl = (id: string) => `https://lh3.googleusercontent.com/d/${id}=w2400`;
+
+// 載入圖片並回傳比例；失敗或逾時回傳 null（不再默默當成 2:1）
+const loadImage = (url: string, timeoutMs = 8000): Promise<number | null> =>
+  new Promise((resolve) => {
+    const img = new Image();
+    const timer = setTimeout(() => resolve(null), timeoutMs);
+    img.onload = () => { clearTimeout(timer); resolve(img.naturalWidth / img.naturalHeight); };
+    img.onerror = () => { clearTimeout(timer); resolve(null); };
+    img.src = url;
+  });
+
+// 需求單編號（台北時間 yyyyMMdd-HHmmss），與雲端檔名一致
+const makeRef = () => {
+  const iso = new Date(Date.now() + 8 * 3600 * 1000).toISOString();
+  return iso.slice(0, 10).replace(/-/g, "") + "-" + iso.slice(11, 19).replace(/:/g, "");
+};
+
+// 剪貼簿容錯：新 API 失敗（LINE 內建瀏覽器常見）改用舊方法
+const copyText = async (text: string) => {
+  try { await navigator.clipboard.writeText(text); return true; } catch { /* fallback */ }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text; ta.setAttribute("readonly", ""); ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch { return false; }
+};
+
+const safeStorage = {
+  get(key: string) { try { return localStorage.getItem(key); } catch { return null; } },
+  set(key: string, val: string) { try { localStorage.setItem(key, val); } catch { /* ignore */ } },
+  remove(key: string) { try { localStorage.removeItem(key); } catch { /* ignore */ } },
+};
 
 export default function App() {
   const [appMode, setAppMode] = useState<'admin' | 'viewer'>('admin');
@@ -259,54 +316,73 @@ export default function App() {
   const [isCopied, setIsCopied] = useState(false);
   const [currentView, setCurrentView] = useState<'album' | 'merch'>('album');
   const [albumName, setAlbumName] = useState("");
+  const [folderId, setFolderId] = useState("");
   const [albumPhotos, setAlbumPhotos] = useState<Photo[]>([]);
   const [merchPhotos, setMerchPhotos] = useState<Photo[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [gatePassed, setGatePassed] = useState(false);
-  const [dynamicAspectRatio, setDynamicAspectRatio] = useState<number | null>(null); 
+  const [dynamicAspectRatio, setDynamicAspectRatio] = useState<number | null>(null);
   const [albumSpreadIndex, setAlbumSpreadIndex] = useState(0);
   const [merchIndex, setMerchIndex] = useState(0);
   const [flipState, setFlipState] = useState<{ direction: "next" | "prev"; from: number; to: number; active: boolean; } | null>(null);
   const [showAlbumCropLines, setShowAlbumCropLines] = useState(true);
   const [showMerchCropLines, setShowMerchCropLines] = useState(true);
+  // V2：相冊回饋改以「照片 ID」為 key（原本用頁碼，檔案增減時會錯位）
   const [allFeedbacks, setAllFeedbacks] = useState<Record<string, Record<string, string>>>({});
   const [saveIndicator, setSaveIndicator] = useState(false);
   const [showFinalUI, setShowFinalUI] = useState(false);
-  
-  // 👑 新增跳轉狀態管理
   const [sendingStatus, setSendingStatus] = useState<"approve" | "feedback" | null>(null);
 
   const albumRef = useRef<HTMLDivElement>(null);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const draftReadyRef = useRef(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const nameFromUrl = params.get("name") || params.get("album");
     const idFromUrl = params.get("id");
-    
+
     if (idFromUrl) {
       setAppMode('viewer');
       setAlbumName(nameFromUrl || "校稿預覽");
+      setFolderId(idFromUrl);
       fetchPhotos(idFromUrl);
     } else {
       setAppMode('admin');
     }
   }, []);
 
+  // 💾 草稿自動存檔（依資料夾 ID，保留 30 天）→ 重整、誤關、從 LINE 返回都不遺失
+  useEffect(() => {
+    if (!folderId || !draftReadyRef.current) return;
+    safeStorage.set(DRAFT_PREFIX + folderId, JSON.stringify({ savedAt: Date.now(), feedbacks: allFeedbacks }));
+  }, [allFeedbacks, folderId]);
+
+  // 🚀 預載前後兩個跨頁，翻頁時不再出現白頁閃爍
+  useEffect(() => {
+    if (currentView === 'album') {
+      [1, 2, -1].forEach(d => { const p = albumPhotos[albumSpreadIndex + d]; if (p) { const i = new Image(); i.src = p.url; } });
+    } else {
+      [1, -1].forEach(d => { const p = merchPhotos[merchIndex + d]; if (p) { const i = new Image(); i.src = p.url; } });
+    }
+  }, [albumSpreadIndex, merchIndex, currentView, albumPhotos, merchPhotos]);
+
   const extractIdFromLink = (link: string) => {
     const folderMatch = link.match(/folders\/([a-zA-Z0-9_-]+)/);
     if (folderMatch) return folderMatch[1];
     const idMatch = link.match(/id=([a-zA-Z0-9_-]+)/);
     if (idMatch) return idMatch[1];
-    return link.trim(); 
+    return link.trim();
   };
 
   const handleGenerateLink = (e: React.FormEvent) => {
     e.preventDefault();
     if (!displayName.trim() || !folderLink.trim()) return;
-    
+
     const targetId = extractIdFromLink(folderLink);
-    const directLink = `${window.location.origin}${window.location.pathname}?name=${encodeURIComponent(displayName.trim())}&id=${targetId}`;
+    // V2：加上 openExternalBrowser=1，客人從 LINE 點開會改用手機預設瀏覽器（剪貼簿、跳轉更穩定）
+    const directLink = `${window.location.origin}${window.location.pathname}?name=${encodeURIComponent(displayName.trim())}&id=${targetId}&openExternalBrowser=1`;
     setGeneratedLink(directLink);
     setIsCopied(false);
   };
@@ -319,7 +395,8 @@ export default function App() {
   };
 
   const copyGeneratedLink = () => {
-    navigator.clipboard.writeText(generatedLink).then(() => {
+    copyText(generatedLink).then(ok => {
+      if (!ok) return;
       setIsCopied(true);
       setTimeout(() => setIsCopied(false), 3000);
     });
@@ -333,40 +410,45 @@ export default function App() {
     return false;
   };
 
-  const getImageRatio = (url: string): Promise<number> => {
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.onload = () => resolve(img.naturalWidth / img.naturalHeight);
-      img.onerror = () => resolve(2);
-      img.src = url;
-    });
-  };
-
   const fetchWithRetry = async (url: string, retries = 3): Promise<any> => {
+    let lastErr: any;
     for (let i = 0; i < retries; i++) {
+      let text = "";
       try {
         const res = await fetch(url);
-        const text = await res.text();
-        if (text.startsWith('<!DOCTYPE') || text.includes('<html')) {
-          if (i === retries - 1) throw new Error("Google 伺服器短暫異常，請重新整理頁面。");
-          await new Promise(r => setTimeout(r, 1000));
-          continue;
-        }
-        const json = JSON.parse(text);
-        if (json.error) throw new Error(json.error);
-        return json;
-      } catch (err: any) {
-        if (i === retries - 1) throw err;
-        await new Promise(r => setTimeout(r, 1000));
+        text = await res.text();
+      } catch (err) {
+        lastErr = err;                       // 網路錯誤 → 重試
+        await new Promise(r => setTimeout(r, 1000 * (i + 1)));
+        continue;
       }
+      if (text.startsWith('<!DOCTYPE') || text.includes('<html')) {
+        lastErr = new Error("Google 伺服器短暫異常，請重新整理頁面。");
+        await new Promise(r => setTimeout(r, 1000 * (i + 1)));
+        continue;
+      }
+      const json = JSON.parse(text);
+      if (json && json.error) throw new Error(json.error); // 權限／ID 錯誤不必重試
+      return json;
     }
+    throw lastErr;
   };
 
-  const fetchPhotos = async (folderId: string) => {
+  const fetchPhotos = async (id: string) => {
     setLoading(true); setError("");
     try {
-      const rawData: Photo[] = await fetchWithRetry(`${API_URL}?folderId=${folderId}`);
-      
+      const data = await fetchWithRetry(`${API_URL}?folderId=${id}`);
+
+      // 🔒 已送出鎖定
+      if (data && !Array.isArray(data) && data.locked) {
+        safeStorage.remove(DRAFT_PREFIX + id);
+        setError("此校稿已完成送出 ✅ 如需再次調整，請透過 LINE 與我們聯繫，謝謝您！");
+        return;
+      }
+
+      // 只保留圖片檔（排除 txt / json / 鎖定檔等）
+      const rawData: Photo[] = (Array.isArray(data) ? data : []).filter(isImageFile);
+
       const filteredAlbum: Photo[] = [];
       const filteredMerch: Photo[] = [];
 
@@ -381,43 +463,77 @@ export default function App() {
           filteredAlbum.push(file);
         }
       });
-      
-      const sortedAlbum = filteredAlbum.sort((a, b) => {
-        const getWeight = (filename = "") => {
-          const n = filename.toLowerCase();
-          if (n.includes("封面") || n.startsWith("000")) return -999999;
-          if (n.includes("封底")) return 999999;
-          const match = filename.match(/_(\d+)/);
-          return (match && match[1]) ? parseInt(match[1], 10) : 0;
-        };
-        return getWeight(a.name) - getWeight(b.name);
-      });
 
-      if (sortedAlbum.length > 0) {
-        const spreadPhoto = sortedAlbum.find((p, idx) => !checkIsSinglePage(p, idx, sortedAlbum.length));
-        const targetPhoto = spreadPhoto || sortedAlbum[0];
-        
-        const naturalRatio = await getImageRatio(targetPhoto.url);
-        const finalRatio = (targetPhoto === spreadPhoto) ? naturalRatio : (naturalRatio * 2);
-        setDynamicAspectRatio(finalRatio);
+      const getWeight = (filename = "") => {
+        const n = filename.toLowerCase();
+        if (n.includes("封面") || n.startsWith("000")) return -999999;
+        if (n.includes("封底")) return 999999;
+        const match = filename.match(/_(\d+)/);
+        return (match && match[1]) ? parseInt(match[1], 10) : 0;
+      };
+      // V2：同權重時以檔名自然排序（避免 1, 10, 2 亂序）
+      const sortedAlbum = filteredAlbum.sort((a, b) => (getWeight(a.name) - getWeight(b.name)) || naturalCompare(a.name, b.name));
+      const sortedMerch = filteredMerch.sort((a, b) => naturalCompare(a.name, b.name));
+
+      // ⚡ 圖片網址：依序測試 lh3 CDN → Drive 縮圖 → 原網址，採用第一個能顯示的
+      //    （Google 已限制 uc?export=view 嵌入，單靠原網址常會白屏）
+      const probe = sortedAlbum.find((p, idx) => !checkIsSinglePage(p, idx, sortedAlbum.length)) || sortedAlbum[0] || null;
+      const probeTarget = probe || sortedMerch[0] || null;
+      const urlBuilders: ((p: Photo) => string)[] = [
+        ...(USE_FAST_CDN ? [(p: Photo) => fastUrl(p.id)] : []),
+        (p: Photo) => `https://drive.google.com/thumbnail?id=${p.id}&sz=w2400`,
+        (p: Photo) => p.url,
+      ];
+      let ratio: number | null = null;
+      let chosen: ((p: Photo) => string) | null = null;
+      if (probeTarget) {
+        for (const build of urlBuilders) {
+          ratio = await loadImage(build(probeTarget), 6000);
+          if (ratio !== null) { chosen = build; break; }
+        }
+      }
+      if (probeTarget && !chosen) {
+        throw new Error("照片無法顯示：請將校稿資料夾的共用設定改為「知道連結的任何人 → 檢視者」後重新整理。");
+      }
+      const mapUrl = (p: Photo) => (chosen ? { ...p, url: chosen(p) } : p);
+
+      if (probe) {
+        const isSpread = !checkIsSinglePage(probe, sortedAlbum.indexOf(probe), sortedAlbum.length);
+        const natural = ratio ?? 1;
+        setDynamicAspectRatio(isSpread ? (ratio ?? 2) : natural * 2);
       } else {
-        setDynamicAspectRatio(2); 
+        setDynamicAspectRatio(2);
       }
 
-      setAlbumPhotos(sortedAlbum);
-      setMerchPhotos(filteredMerch);
+      setAlbumPhotos(sortedAlbum.map(mapUrl));
+      setMerchPhotos(sortedMerch.map(mapUrl));
       setAlbumSpreadIndex(0);
       setMerchIndex(0);
-      setAllFeedbacks({});
-      
-      if (sortedAlbum.length === 0 && filteredMerch.length > 0) {
+
+      // 還原草稿
+      let restored: Record<string, Record<string, string>> = {};
+      const raw = safeStorage.get(DRAFT_PREFIX + id);
+      if (raw) {
+        try {
+          const d = JSON.parse(raw);
+          if (d && Date.now() - d.savedAt < DRAFT_TTL_MS) restored = d.feedbacks || {};
+          else safeStorage.remove(DRAFT_PREFIX + id);
+        } catch { /* ignore */ }
+      }
+      setAllFeedbacks(restored);
+      draftReadyRef.current = true;
+
+      if (sortedAlbum.length === 0 && sortedMerch.length > 0) {
         setCurrentView('merch');
       } else {
         setCurrentView('album');
       }
 
+      if (sortedAlbum.length === 0 && sortedMerch.length === 0) {
+        setError("此資料夾內目前沒有可校稿的圖片，請與我們聯繫。");
+      }
     } catch (err: any) {
-      setError(err.message || "無法載入圖片。請確認您貼上的「資料夾網址」是否正確，且該資料夾已開放檢視權限。");
+      setError(err?.message || "無法載入圖片。請確認您貼上的「資料夾網址」是否正確，且該資料夾已開放檢視權限。");
     } finally {
       setLoading(false);
     }
@@ -429,7 +545,7 @@ export default function App() {
     if (currentView !== 'album' || newIndex === albumSpreadIndex || flipState) return;
     const direction = newIndex > albumSpreadIndex ? "next" : "prev";
     setFlipState({ direction, from: albumSpreadIndex, to: newIndex, active: false });
-    
+
     requestAnimationFrame(() => {
       requestAnimationFrame(() => setFlipState(prev => prev ? { ...prev, active: true } : null));
     });
@@ -440,7 +556,7 @@ export default function App() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (appMode === 'admin' || showFinalUI || !gatePassed) return;
       if (document.activeElement?.tagName === "TEXTAREA") return;
-      
+
       if (currentView === 'album' && albumPhotos.length > 0) {
         if (e.code === "ArrowRight") handlePageChange(Math.min(maxSpreads, albumSpreadIndex + 1));
         if (e.code === "ArrowLeft") handlePageChange(Math.max(0, albumSpreadIndex - 1));
@@ -464,8 +580,9 @@ export default function App() {
   };
 
   const triggerSaveIndicator = () => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     setSaveIndicator(true);
-    setTimeout(() => setSaveIndicator(false), 2000);
+    saveTimerRef.current = setTimeout(() => setSaveIndicator(false), 2000);
   };
 
   const getAlbumIndicatorLabel = (index = albumSpreadIndex) => {
@@ -483,59 +600,90 @@ export default function App() {
     return `📦 ${merchPhotos[merchIndex]?.name.split('.')[0]} (${merchIndex + 1} / ${merchPhotos.length})`;
   };
 
+  // 結構化回饋（依實際頁序），供摘要與雲端備份共用
+  const collectFeedbackItems = () => {
+    const albumFb = allFeedbacks['album'] || {};
+    const merchFb = allFeedbacks['merch'] || {};
+    const album = albumPhotos
+      .map((p, idx) => ({ type: 'album', id: p.id, name: p.name, label: getAlbumIndicatorLabel(idx), feedback: (albumFb[p.id] || '').trim() }))
+      .filter(it => it.feedback);
+    const merch = merchPhotos
+      .map(p => ({ type: 'merch', id: p.id, name: p.name, label: p.name.split('.')[0], feedback: (merchFb[p.id] || '').trim() }))
+      .filter(it => it.feedback);
+    return { album, merch };
+  };
+
   const generateFeedbackSummary = () => {
+    const { album, merch } = collectFeedbackItems();
     let summary = "";
-    
-    const albumFeedbacks = allFeedbacks['album'] || {};
-    let albumSummary = "";
-    Object.keys(albumFeedbacks).sort((a, b) => Number(a) - Number(b)).forEach(pageIdx => {
-      const text = albumFeedbacks[pageIdx]?.trim();
-      if (text) {
-        albumSummary += `📍 [相冊 - ${getAlbumIndicatorLabel(Number(pageIdx))}]：\n   ${text}\n`;
-      }
-    });
-    if (albumSummary) summary += `\n📖 【3D 相冊校稿】：\n${albumSummary}`;
-
-    const merchFeedbacks = allFeedbacks['merch'] || {};
-    let merchSummary = "";
-    Object.keys(merchFeedbacks).forEach(photoId => {
-      const text = merchFeedbacks[photoId]?.trim();
-      if (text) {
-        const photo = merchPhotos.find(p => p.id === photoId);
-        merchSummary += `📍 [周邊 - ${photo?.name.split('.')[0]}]：\n   ${text}\n`;
-      }
-    });
-    if (merchSummary) summary += `\n🖼️ 【周邊商品校稿】：\n${merchSummary}`;
-
+    if (album.length) summary += `\n📖 【3D 相冊校稿】：\n` + album.map(it => `📍 [相冊 - ${it.label}]：\n   ${it.feedback}\n`).join("");
+    if (merch.length) summary += `\n🖼️ 【周邊商品校稿】：\n` + merch.map(it => `📍 [周邊 - ${it.label}]：\n   ${it.feedback}\n`).join("");
     return summary.trim();
   };
 
-  // 👑 升級版 LINE 串接引擎：雙重防護 (先強制複製，後自動跳轉)
+  // ☁️ 雲端備份：存到該案資料夾內「校稿回覆」（JSON＋TXT＋PDF）並自動鎖定連結
+  const backupToCloud = async (type: "approve" | "feedback", ref: string, summary: string) => {
+    const { album, merch } = collectFeedbackItems();
+    const payload = {
+      action: 'submit',
+      folderId,
+      caseName: albumName,
+      ref,
+      status: type === 'approve' ? 'approved' : 'feedback',
+      submittedAt: new Date().toISOString(),
+      totalAlbum: albumPhotos.length,
+      totalMerch: merchPhotos.length,
+      items: [...album, ...merch],
+      summary,
+      userAgent: navigator.userAgent,
+    };
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), BACKUP_WAIT_MS);
+    try {
+      // text/plain 可避免 CORS 預檢，Apps Script 照常收到 JSON
+      const res = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload), signal: ctrl.signal });
+      const json = JSON.parse(await res.text());
+      return !!json.ok;
+    } catch (err) {
+      console.warn("Cloud backup failed", err);
+      return false;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  // 👑 LINE 串接：先複製 → 同步雲端（最多等 8 秒）→ 跳轉 LINE
   const handleSendToLine = async (type: "approve" | "feedback") => {
+    if (sendingStatus) return; // 防止重複點擊
+
+    const ref = makeRef();
+    const summary = generateFeedbackSummary();
     let textToSend = "";
     if (type === "approve") {
-      textToSend = `【辰妍國際 校稿確認】\n案號：${albumName}\n狀態：✅ 所有項目皆確認無誤，請安排印務製作，謝謝！`;
+      textToSend = `【辰妍國際 校稿確認】\n案號：${albumName}\n需求單編號：${ref}\n狀態：✅ 所有項目皆確認無誤，請安排印務製作，謝謝！`;
     } else {
-      const summary = generateFeedbackSummary();
       if (!summary) { alert("您尚未填寫任何修改需求喔！"); return; }
-      textToSend = `【辰妍國際 校稿調整需求】\n案號：${albumName}\n狀態：⚠️ 希望微調內容\n\n📌 調整說明：\n${summary}`;
+      textToSend = `【辰妍國際 校稿調整需求】\n案號：${albumName}\n需求單編號：${ref}\n狀態：⚠️ 希望微調內容\n\n📌 調整說明：\n${summary}`;
     }
 
     setSendingStatus(type);
 
-    // 第一重防護：嘗試自動複製至剪貼簿
-    try {
-      await navigator.clipboard.writeText(textToSend);
-    } catch (err) {
-      console.log("Clipboard fallback failed");
-    }
+    // 第一重：複製完整內容（必須在任何 await 網路請求之前，iOS 才允許）
+    await copyText(textToSend);
 
-    // 第二重防護：延遲跳轉 LINE App，給予使用者提示時間
-    setTimeout(() => {
-      const lineUrl = `https://line.me/R/oaMessage/@tinycktw/?${encodeURIComponent(textToSend)}`;
-      window.location.href = lineUrl;
-      setTimeout(() => setSendingStatus(null), 2000);
-    }, 600);
+    // 第二重：雲端備份（失敗不阻擋客人，LINE 訊息仍有完整文字）
+    const synced = await backupToCloud(type, ref, summary);
+    if (synced) safeStorage.remove(DRAFT_PREFIX + folderId);
+
+    // 第三重：LINE 預填文字過長時截斷，避免網址過長無法開啟
+    let lineText = textToSend;
+    if (type === "feedback" && summary.length > LINE_SUMMARY_LIMIT) {
+      lineText = textToSend.slice(0, textToSend.length - summary.length) + summary.slice(0, LINE_SUMMARY_LIMIT) +
+        `…\n\n（內容較長，完整需求已${synced ? "同步至雲端並" : ""}複製，請直接貼上）`;
+    }
+    const lineUrl = `https://line.me/R/oaMessage/${encodeURIComponent(LINE_OA_ID)}/?${encodeURIComponent(lineText)}`;
+    window.location.href = lineUrl;
+    setTimeout(() => setSendingStatus(null), 2000);
   };
 
   if (appMode === 'admin') {
@@ -546,27 +694,27 @@ export default function App() {
           <div className="admin-box">
             <h1 className="brand-logo-text">辰妍國際</h1>
             <p className="brand-subtitle">ALBUM PROOFING SYSTEM</p>
-            
+
             <form onSubmit={handleGenerateLink}>
               <div className="input-group">
                 <label className="input-label">1. 設定對外顯示的案號名稱：</label>
-                <input 
-                  className="drive-input" 
-                  value={displayName} 
-                  onChange={e => setDisplayName(e.target.value)} 
-                  placeholder="例如：羅郁婷-相冊三校" 
+                <input
+                  className="drive-input"
+                  value={displayName}
+                  onChange={e => setDisplayName(e.target.value)}
+                  placeholder="例如：羅郁婷-相冊三校"
                 />
               </div>
               <div className="input-group">
                 <label className="input-label">2. 請貼上「校稿資料夾」的雲端硬碟網址：</label>
-                <input 
-                  className="drive-input" 
-                  value={folderLink} 
-                  onChange={e => setFolderLink(e.target.value)} 
-                  placeholder="請貼上該特定版本資料夾的連結..." 
+                <input
+                  className="drive-input"
+                  value={folderLink}
+                  onChange={e => setFolderLink(e.target.value)}
+                  placeholder="請貼上該特定版本資料夾的連結..."
                 />
               </div>
-              
+
               <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
                 <button className="btn-reset" type="button" onClick={handleResetForm}>
                   清除重填
@@ -597,7 +745,7 @@ export default function App() {
     );
   }
 
-  if (loading || dynamicAspectRatio === null || (albumPhotos.length === 0 && merchPhotos.length === 0)) {
+  if (loading || error || dynamicAspectRatio === null || (albumPhotos.length === 0 && merchPhotos.length === 0)) {
     return (
       <React.Fragment>
         <style>{GLOBAL_STYLES}</style>
@@ -618,21 +766,21 @@ export default function App() {
     baseRightIndex = flipState.direction === "next" ? flipState.to : flipState.from;
   }
 
-  const ALBUM_CROP_Y = "1.5%";    
-  const ALBUM_CROP_X = "0.75%";   
-  const MERCH_CROP_PERCENT = "1.5%"; 
+  const ALBUM_CROP_Y = "1.5%";
+  const ALBUM_CROP_X = "0.75%";
+  const MERCH_CROP_PERCENT = "1.5%";
 
   const isCurrentViewSingle = checkIsSinglePage(albumPhotos[albumSpreadIndex], albumSpreadIndex, albumPhotos.length);
-  const albumCropLineStyle = isCurrentViewSingle 
-    ? (albumSpreadIndex === 0 
-        ? { top: ALBUM_CROP_Y, bottom: ALBUM_CROP_Y, left: `calc(50% + ${ALBUM_CROP_X})`, right: ALBUM_CROP_X } 
-        : { top: ALBUM_CROP_Y, bottom: ALBUM_CROP_Y, left: ALBUM_CROP_X, right: `calc(50% + ${ALBUM_CROP_X})` }) 
+  const albumCropLineStyle = isCurrentViewSingle
+    ? (albumSpreadIndex === 0
+        ? { top: ALBUM_CROP_Y, bottom: ALBUM_CROP_Y, left: `calc(50% + ${ALBUM_CROP_X})`, right: ALBUM_CROP_X }
+        : { top: ALBUM_CROP_Y, bottom: ALBUM_CROP_Y, left: ALBUM_CROP_X, right: `calc(50% + ${ALBUM_CROP_X})` })
     : { top: ALBUM_CROP_Y, bottom: ALBUM_CROP_Y, left: ALBUM_CROP_X, right: ALBUM_CROP_X };
 
   let containerTransform = "translateX(0%)";
   if (currentView === 'album') {
     if (albumSpreadIndex === 0 && checkIsSinglePage(albumPhotos[0], 0, albumPhotos.length)) {
-      containerTransform = "translateX(-25%)"; 
+      containerTransform = "translateX(-25%)";
     } else if (albumSpreadIndex === maxSpreads && checkIsSinglePage(albumPhotos[maxSpreads], maxSpreads, albumPhotos.length)) {
       containerTransform = "translateX(25%)";
     }
@@ -647,31 +795,31 @@ export default function App() {
     const isSingle = checkIsSinglePage(photo, pageIdx, albumPhotos.length);
 
     if (isSingle) {
-      if (pageIdx === 0) { 
-        if (side === "left") return null; 
+      if (pageIdx === 0) {
+        if (side === "left") return null;
         return (
           <>
             <div className="cover-spine" />
-            <div style={{ 
-              width: "100%", height: "100%", backgroundColor: "#fff", 
-              backgroundImage: `url(${photo.url})`, 
-              backgroundSize: "100% 100%",         
-              backgroundPosition: "center",  
-              backgroundRepeat: "no-repeat" 
+            <div style={{
+              width: "100%", height: "100%", backgroundColor: "#fff",
+              backgroundImage: `url(${photo.url})`,
+              backgroundSize: "100% 100%",
+              backgroundPosition: "center",
+              backgroundRepeat: "no-repeat"
             }} />
           </>
         );
-      } else { 
-        if (side === "right") return null; 
+      } else {
+        if (side === "right") return null;
         return (
           <>
             <div className="shadow-right-edge" />
-            <div style={{ 
-              width: "100%", height: "100%", backgroundColor: "#fff", 
-              backgroundImage: `url(${photo.url})`, 
-              backgroundSize: "100% 100%",         
-              backgroundPosition: "center",   
-              backgroundRepeat: "no-repeat" 
+            <div style={{
+              width: "100%", height: "100%", backgroundColor: "#fff",
+              backgroundImage: `url(${photo.url})`,
+              backgroundSize: "100% 100%",
+              backgroundPosition: "center",
+              backgroundRepeat: "no-repeat"
             }} />
           </>
         );
@@ -688,33 +836,36 @@ export default function App() {
     );
   };
 
+  const currentAlbumPhoto = albumPhotos[albumSpreadIndex];
+
   return (
     <React.Fragment>
       <style>{GLOBAL_STYLES}</style>
       <div className="app-grid-shell" ref={albumRef} tabIndex={0} style={{ outline: 'none' }}>
-        
+
         <header className="header-bar">
           <div className="brand-logo-text-small">辰妍國際</div>
-          
+
           {merchPhotos.length > 0 && albumPhotos.length > 0 && (
             <div className="view-tabs">
-              <button 
-                className={`tab-btn ${currentView === 'album' ? 'active' : ''}`} 
+              <button
+                className={`tab-btn ${currentView === 'album' ? 'active' : ''}`}
                 onClick={() => setCurrentView('album')}
               >
                 📖 3D 相冊校稿
               </button>
-              <button 
-                className={`tab-btn ${currentView === 'merch' ? 'active' : ''}`} 
+              <button
+                className={`tab-btn ${currentView === 'merch' ? 'active' : ''}`}
                 onClick={() => setCurrentView('merch')}
               >
                 🖼️ 周邊商品校稿
               </button>
             </div>
           )}
-          
+
           <div className="header-actions">
-            <button className="logout-btn" onClick={() => { setAlbumPhotos([]); setMerchPhotos([]); setGatePassed(false); setShowFinalUI(false); window.history.replaceState({}, '', window.location.pathname); }}>離開</button>
+            {/* V2：離開後不清除網址（客人重整即可回來，草稿仍在），也不會卡在「載入中」 */}
+            <button className="logout-btn" onClick={() => { setAlbumPhotos([]); setMerchPhotos([]); setGatePassed(false); setShowFinalUI(false); setError("您已離開校稿頁面，填寫內容已暫存於此裝置，重新整理即可繼續。"); }}>離開</button>
           </div>
         </header>
 
@@ -724,27 +875,27 @@ export default function App() {
               {getStageTitle()}
             </div>
 
-            <button 
-              className="nav-btn-floating nav-left" 
-              onClick={() => handlePageChange(Math.max(0, albumSpreadIndex - 1))} 
+            <button
+              className="nav-btn-floating nav-left"
+              onClick={() => handlePageChange(Math.max(0, albumSpreadIndex - 1))}
               disabled={albumSpreadIndex === 0 || !!flipState}
             >
               &#10094;
             </button>
 
             <div className="album-layout-wrapper" style={{ maxWidth: `calc(55vh * ${dynamicAspectRatio})` }}>
-              <div 
-                className={containerClasses} 
+              <div
+                className={containerClasses}
                 style={{ aspectRatio: dynamicAspectRatio, transform: containerTransform }}
               >
                 <div className={`album-page-base base-left ${baseLeftIndex === 0 ? "is-cover" : ""}`} style={{ visibility: albumPhotos[baseLeftIndex] ? "visible" : "hidden" }}>
                   {renderPageInner(albumPhotos[baseLeftIndex], baseLeftIndex, "left")}
                 </div>
-                
+
                 <div className={`album-page-base base-right ${baseRightIndex === 0 ? "is-cover" : ""}`} style={{ visibility: albumPhotos[baseRightIndex] ? "visible" : "hidden" }}>
                   {renderPageInner(albumPhotos[baseRightIndex], baseRightIndex, "right")}
                 </div>
-                
+
                 {flipState && (
                   <div className={`album-flipper flipping-${flipState.direction} ${flipState.active ? "active" : ""}`}>
                     <div className={`flipper-face flipper-front ${(flipState.direction === "next" ? flipState.from : flipState.to) === 0 ? "is-cover" : ""}`}>
@@ -755,17 +906,17 @@ export default function App() {
                     </div>
                   </div>
                 )}
-                
+
                 {gatePassed && showAlbumCropLines && (
                   <div className="crop-line-overlay" style={albumCropLineStyle}>
                     <span className="crop-warning-text">⚠️ 裁切線 (內縮4mm)</span>
                   </div>
                 )}
               </div>
-              
+
               {gatePassed && (
-                <button 
-                  className={`crop-toggle-btn-inline ${showAlbumCropLines ? 'active' : ''}`} 
+                <button
+                  className={`crop-toggle-btn-inline ${showAlbumCropLines ? 'active' : ''}`}
                   onClick={() => setShowAlbumCropLines(!showAlbumCropLines)}
                   title="模擬印刷廠的安全裁切範圍"
                 >
@@ -774,9 +925,9 @@ export default function App() {
               )}
             </div>
 
-            <button 
-              className="nav-btn-floating nav-right" 
-              onClick={() => handlePageChange(Math.min(maxSpreads, albumSpreadIndex + 1))} 
+            <button
+              className="nav-btn-floating nav-right"
+              onClick={() => handlePageChange(Math.min(maxSpreads, albumSpreadIndex + 1))}
               disabled={albumSpreadIndex === maxSpreads || !!flipState}
             >
               &#10095;
@@ -790,9 +941,9 @@ export default function App() {
               {getStageTitle()}
             </div>
 
-            <button 
-              className="nav-btn-floating nav-left" 
-              onClick={() => setMerchIndex(prev => Math.max(0, prev - 1))} 
+            <button
+              className="nav-btn-floating nav-left"
+              onClick={() => setMerchIndex(prev => Math.max(0, prev - 1))}
               disabled={merchIndex === 0}
             >
               &#10094;
@@ -802,7 +953,7 @@ export default function App() {
               <div className="merch-image-box">
                 <div className="merch-img-wrapper">
                    <img src={merchPhotos[merchIndex].url} alt={merchPhotos[merchIndex].name} draggable="false" />
-                   
+
                    {gatePassed && showMerchCropLines && (
                       <div className="crop-line-overlay" style={{ top: MERCH_CROP_PERCENT, bottom: MERCH_CROP_PERCENT, left: MERCH_CROP_PERCENT, right: MERCH_CROP_PERCENT }}>
                         <span className="crop-warning-text">⚠️ 裁切線 (內縮8mm)</span>
@@ -810,10 +961,10 @@ export default function App() {
                     )}
                 </div>
               </div>
-              
+
               {gatePassed && (
-                <button 
-                  className={`crop-toggle-btn-inline ${showMerchCropLines ? 'active' : ''}`} 
+                <button
+                  className={`crop-toggle-btn-inline ${showMerchCropLines ? 'active' : ''}`}
                   onClick={() => setShowMerchCropLines(!showMerchCropLines)}
                   title="模擬印刷廠的安全裁切範圍"
                 >
@@ -822,9 +973,9 @@ export default function App() {
               )}
             </div>
 
-            <button 
-              className="nav-btn-floating nav-right" 
-              onClick={() => setMerchIndex(prev => Math.min(merchPhotos.length - 1, prev + 1))} 
+            <button
+              className="nav-btn-floating nav-right"
+              onClick={() => setMerchIndex(prev => Math.min(merchPhotos.length - 1, prev + 1))}
               disabled={merchIndex === merchPhotos.length - 1}
             >
               &#10095;
@@ -834,7 +985,7 @@ export default function App() {
         )}
 
         <footer className="footer-controls-area">
-          
+
           {currentView === 'album' && albumPhotos.length > 0 && (
             <div className="feedback-section">
               <div className="feedback-info">
@@ -843,11 +994,11 @@ export default function App() {
                 <div className={`save-status ${saveIndicator ? 'visible' : ''}`}>✓ 內容已自動暫存</div>
               </div>
               <div className="feedback-input-container">
-                <textarea 
+                <textarea
                   className="page-feedback-textarea"
                   placeholder={`請輸入修改建議... (若無須修改請留白，翻頁會自動存檔)`}
-                  value={(allFeedbacks['album'] || {})[albumSpreadIndex] || ''}
-                  onChange={(e) => handleFeedbackChange(albumSpreadIndex.toString(), e.target.value)}
+                  value={(allFeedbacks['album'] || {})[currentAlbumPhoto?.id] || ''}
+                  onChange={(e) => currentAlbumPhoto && handleFeedbackChange(currentAlbumPhoto.id, e.target.value)}
                   onBlur={triggerSaveIndicator}
                 />
                 <div className="shadow-disclaimer-text">
@@ -865,7 +1016,7 @@ export default function App() {
                 <div className={`save-status ${saveIndicator ? 'visible' : ''}`}>✓ 內容已自動暫存</div>
               </div>
               <div className="feedback-input-container">
-                <textarea 
+                <textarea
                   className="page-feedback-textarea"
                   placeholder={`請輸入修改建議... (若無須修改請留白，切換會自動存檔)`}
                   value={(allFeedbacks['merch'] || {})[merchPhotos[merchIndex].id] || ''}
@@ -890,7 +1041,7 @@ export default function App() {
         <div className="modal-overlay">
           <div className="final-modal-box">
             <h2 className="brand-title">Copyright Notice<br/>著作權聲明</h2>
-            
+
             <div className="legal-content-wrapper">
               <div className="legal-item">
                 <span className="legal-icon">📌</span>
@@ -925,7 +1076,7 @@ export default function App() {
             <button className="close-modal-btn" onClick={() => setShowFinalUI(false)}>✕</button>
             <h2 className="brand-title" style={{ fontSize: '1.4rem' }}>Layout Proofing 校稿結果</h2>
             <p style={{ color: '#aaa', fontSize: '0.85rem', marginBottom: '10px', textAlign: 'center' }}>請點擊按鈕，系統將為您跳轉至 LINE。</p>
-            
+
             <div className="action-cards-container">
               <div className="action-card">
                 <h3 className="card-title" style={{ color: '#187880' }}>✅ 選項一：校稿沒有問題</h3>
@@ -934,11 +1085,11 @@ export default function App() {
                   {sendingStatus === "approve" ? "✅ 已複製！正在開啟 LINE..." : "💬 傳送確認訊息至 LINE"}
                 </button>
               </div>
-              
+
               <div className="action-card">
                 <h3 className="card-title" style={{ color: '#ff4d4f' }}>⚠️ 選項二：希望更換或調整</h3>
                 <p className="card-desc" style={{marginBottom: '5px'}}>以下為您剛才填寫的修改建議：</p>
-                
+
                 {generateFeedbackSummary() ? (
                   <div className="final-feedback-summary">
                     {generateFeedbackSummary()}
@@ -948,14 +1099,13 @@ export default function App() {
                     您尚未填寫任何調整建議喔！
                   </div>
                 )}
-                
+
                 <button className="modal-copy-btn outline" onClick={() => handleSendToLine("feedback")}>
                   {sendingStatus === "feedback" ? "✅ 已複製！正在開啟 LINE..." : "💬 傳送調整需求至 LINE"}
                 </button>
               </div>
             </div>
-            
-            {/* 👑 電腦版救星防呆提示 */}
+
             <p style={{fontSize: '0.75rem', color: '#888', marginTop: '15px', textAlign: 'center'}}>
               💡 提示：若您的電腦無法自動開啟 LINE，訊息已為您複製完成，請直接前往 LINE 手動貼上。
             </p>
