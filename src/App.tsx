@@ -140,6 +140,13 @@ const GLOBAL_STYLES = `
   .crop-toggle-btn-inline:hover { background: rgba(24, 120, 128, 0.05); }
   .crop-toggle-btn-inline.active { background: #ff4d4f; color: #fff; border-color: #ff4d4f; }
 
+  /* V2.1 旋轉相冊 */
+  .album-tool-row { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
+  .album-rotate-stage { position: relative; width: 100%; touch-action: pinch-zoom; }
+  .album-book-container.is-rotated { position: absolute; top: 50%; left: 50%; perspective: 2500px; }
+  .nav-btn-floating.nav-up { left: auto; right: 40px; top: calc(50% - 28px); }
+  .nav-btn-floating.nav-down { left: auto; right: 40px; top: calc(50% + 28px); }
+
   .crop-line-overlay {
     position: absolute;
     border: 2px dashed rgba(255, 77, 79, 0.9);
@@ -233,6 +240,10 @@ const GLOBAL_STYLES = `
 
     .album-layout-wrapper, .merch-layout-wrapper { width: 92vw !important; align-items: center; justify-content: center; }
     .crop-toggle-btn-inline { margin-top: 15px; padding: 6px 14px; font-size: 0.8rem; }
+    .album-tool-row { justify-content: center; }
+    .nav-btn-floating.nav-up, .nav-btn-floating.nav-down { right: 5px; }
+    .nav-btn-floating.nav-up { top: calc(50% - 24px); }
+    .nav-btn-floating.nav-down { top: calc(50% + 24px); }
     .merch-img-wrapper img { max-height: 50vh; }
 
     .footer-controls-area { border-top: 1px solid #ddd; padding-bottom: max(20px, env(safe-area-inset-bottom)); }
@@ -333,6 +344,9 @@ export default function App() {
   const [saveIndicator, setSaveIndicator] = useState(false);
   const [showFinalUI, setShowFinalUI] = useState(false);
   const [sendingStatus, setSendingStatus] = useState<"approve" | "feedback" | null>(null);
+  // V2.1：整本旋轉 90°（手機直拿時跨頁可放大，改為上下翻閱）
+  const [isAlbumRotated, setIsAlbumRotated] = useState(false);
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
 
   const albumRef = useRef<HTMLDivElement>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -560,6 +574,8 @@ export default function App() {
       if (currentView === 'album' && albumPhotos.length > 0) {
         if (e.code === "ArrowRight") handlePageChange(Math.min(maxSpreads, albumSpreadIndex + 1));
         if (e.code === "ArrowLeft") handlePageChange(Math.max(0, albumSpreadIndex - 1));
+        if (isAlbumRotated && e.code === "ArrowDown") { e.preventDefault(); handlePageChange(Math.min(maxSpreads, albumSpreadIndex + 1)); }
+        if (isAlbumRotated && e.code === "ArrowUp") { e.preventDefault(); handlePageChange(Math.max(0, albumSpreadIndex - 1)); }
       } else if (currentView === 'merch' && merchPhotos.length > 0) {
         if (e.code === "ArrowRight") setMerchIndex(prev => Math.min(merchPhotos.length - 1, prev + 1));
         if (e.code === "ArrowLeft") setMerchIndex(prev => Math.max(0, prev - 1));
@@ -567,7 +583,25 @@ export default function App() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [appMode, currentView, albumSpreadIndex, maxSpreads, flipState, albumPhotos.length, merchPhotos.length, showFinalUI, gatePassed]);
+  }, [appMode, currentView, albumSpreadIndex, maxSpreads, flipState, albumPhotos.length, merchPhotos.length, showFinalUI, gatePassed, isAlbumRotated]);
+
+  // 📱 手勢翻頁：一般模式左右滑、旋轉模式上下滑（向上滑 = 下一頁）
+  const handleAlbumTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length !== 1) { touchStartRef.current = null; return; }
+    touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  };
+  const handleAlbumTouchEnd = (e: React.TouchEvent) => {
+    const start = touchStartRef.current;
+    touchStartRef.current = null;
+    if (!start || !gatePassed || flipState) return;
+    const dx = e.changedTouches[0].clientX - start.x;
+    const dy = e.changedTouches[0].clientY - start.y;
+    const main = isAlbumRotated ? dy : dx;
+    const cross = isAlbumRotated ? dx : dy;
+    if (Math.abs(main) < 50 || Math.abs(main) < Math.abs(cross)) return;
+    if (main < 0) handlePageChange(Math.min(maxSpreads, albumSpreadIndex + 1));
+    else handlePageChange(Math.max(0, albumSpreadIndex - 1));
+  };
 
   const handleFeedbackChange = (key: string, value: string) => {
     setAllFeedbacks(prev => ({
@@ -836,6 +870,26 @@ export default function App() {
     );
   };
 
+  const renderAlbumTools = () => gatePassed ? (
+    <div className="album-tool-row">
+      <button
+        className="crop-toggle-btn-inline"
+        style={isAlbumRotated ? { background: '#187880', color: '#fff' } : undefined}
+        onClick={() => setIsAlbumRotated(r => !r)}
+        title="手機直拿時可旋轉放大跨頁，改為上下滑動翻頁"
+      >
+        {isAlbumRotated ? '↩️ 恢復原方向' : '🔄 旋轉相冊'}
+      </button>
+      <button
+        className={`crop-toggle-btn-inline ${showAlbumCropLines ? 'active' : ''}`}
+        onClick={() => setShowAlbumCropLines(!showAlbumCropLines)}
+        title="模擬印刷廠的安全裁切範圍"
+      >
+        {showAlbumCropLines ? '👁️ 隱藏相冊出血線' : '✂️ 顯示相冊出血線'}
+      </button>
+    </div>
+  ) : null;
+
   const currentAlbumPhoto = albumPhotos[albumSpreadIndex];
 
   return (
@@ -869,25 +923,14 @@ export default function App() {
           </div>
         </header>
 
-        {currentView === 'album' && albumPhotos.length > 0 && (
-          <main className="stage-center-area">
-            <div className="stage-top-indicator" title={getStageTitle()}>
-              {getStageTitle()}
-            </div>
-
-            <button
-              className="nav-btn-floating nav-left"
-              onClick={() => handlePageChange(Math.max(0, albumSpreadIndex - 1))}
-              disabled={albumSpreadIndex === 0 || !!flipState}
-            >
-              &#10094;
-            </button>
-
-            <div className="album-layout-wrapper" style={{ maxWidth: `calc(55vh * ${dynamicAspectRatio})` }}>
-              <div
-                className={containerClasses}
-                style={{ aspectRatio: dynamicAspectRatio, transform: containerTransform }}
-              >
+        {currentView === 'album' && albumPhotos.length > 0 && (() => {
+          // V2.1：旋轉時書本寬度 W 變成螢幕上的高度
+          const ratio = dynamicAspectRatio || 2;
+          const rotatedW = `min(66vh, ${(88 * ratio).toFixed(2)}vw)`;
+          const goPrev = () => handlePageChange(Math.max(0, albumSpreadIndex - 1));
+          const goNext = () => handlePageChange(Math.min(maxSpreads, albumSpreadIndex + 1));
+          const bookInner = (
+            <>
                 <div className={`album-page-base base-left ${baseLeftIndex === 0 ? "is-cover" : ""}`} style={{ visibility: albumPhotos[baseLeftIndex] ? "visible" : "hidden" }}>
                   {renderPageInner(albumPhotos[baseLeftIndex], baseLeftIndex, "left")}
                 </div>
@@ -912,28 +955,56 @@ export default function App() {
                     <span className="crop-warning-text">⚠️ 裁切線 (內縮4mm)</span>
                   </div>
                 )}
-              </div>
-
-              {gatePassed && (
-                <button
-                  className={`crop-toggle-btn-inline ${showAlbumCropLines ? 'active' : ''}`}
-                  onClick={() => setShowAlbumCropLines(!showAlbumCropLines)}
-                  title="模擬印刷廠的安全裁切範圍"
-                >
-                  {showAlbumCropLines ? '👁️ 隱藏相冊出血線' : '✂️ 顯示相冊出血線'}
-                </button>
-              )}
+            </>
+          );
+          return (
+          <main className="stage-center-area">
+            <div className="stage-top-indicator" title={getStageTitle()}>
+              {getStageTitle()}
             </div>
 
             <button
-              className="nav-btn-floating nav-right"
-              onClick={() => handlePageChange(Math.min(maxSpreads, albumSpreadIndex + 1))}
+              className={`nav-btn-floating ${isAlbumRotated ? 'nav-up' : 'nav-left'}`}
+              onClick={goPrev}
+              disabled={albumSpreadIndex === 0 || !!flipState}
+            >
+              {isAlbumRotated ? <span style={{ display: 'inline-block', transform: 'rotate(90deg)' }}>&#10094;</span> : <>&#10094;</>}
+            </button>
+
+            {isAlbumRotated ? (
+              <div className="album-layout-wrapper" style={{ width: `calc(${rotatedW} / ${ratio})`, maxWidth: 'none', alignItems: 'center' }}>
+                <div className="album-rotate-stage" style={{ height: rotatedW }} onTouchStart={handleAlbumTouchStart} onTouchEnd={handleAlbumTouchEnd}>
+                  <div
+                    className={`${containerClasses} is-rotated`}
+                    style={{ width: rotatedW, aspectRatio: ratio, transform: `translate(-50%, -50%) rotate(90deg) ${containerTransform}` }}
+                  >
+                    {bookInner}
+                  </div>
+                </div>
+                {renderAlbumTools()}
+              </div>
+            ) : (
+              <div className="album-layout-wrapper" style={{ maxWidth: `calc(55vh * ${dynamicAspectRatio})` }} onTouchStart={handleAlbumTouchStart} onTouchEnd={handleAlbumTouchEnd}>
+                <div
+                  className={containerClasses}
+                  style={{ aspectRatio: dynamicAspectRatio, transform: containerTransform }}
+                >
+                  {bookInner}
+                </div>
+                {renderAlbumTools()}
+              </div>
+            )}
+
+            <button
+              className={`nav-btn-floating ${isAlbumRotated ? 'nav-down' : 'nav-right'}`}
+              onClick={goNext}
               disabled={albumSpreadIndex === maxSpreads || !!flipState}
             >
-              &#10095;
+              {isAlbumRotated ? <span style={{ display: 'inline-block', transform: 'rotate(90deg)' }}>&#10095;</span> : <>&#10095;</>}
             </button>
           </main>
-        )}
+          );
+        })()}
 
         {currentView === 'merch' && merchPhotos.length > 0 && (
           <main className="stage-center-area">
