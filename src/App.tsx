@@ -12,6 +12,23 @@ const DRAFT_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 草稿保留 30 天
 const BACKUP_WAIT_MS = 8000;                   // 送出時等待雲端同步的上限
 const LINE_SUMMARY_LIMIT = 500;                // LINE 預填摘要字數上限（避免網址過長開不了）
 const USE_FAST_CDN = true;                     // 圖片優先走 Google lh3 CDN，失敗自動退回原網址
+// V2.2：裁切線位置 true = 畫在作品外圍（不遮擋畫面）；false = 依比例內縮（舊版）
+const CROP_LINE_OUTSIDE = true;
+const CROP_OUT = "-7px";
+
+// ==========================================
+// 🖼️ V2.3 周邊商品顯示規則（方案 A：依檔名判斷，可持續擴充）
+// 給客人的檔案＝給廠商的印刷檔；部分品項的外圈是包邊用，顯示時往內裁掉，
+// 讓客人看到的是「掛上牆後的樣子」。裁切線樣式與一般品項一致。
+// ==========================================
+const MERCH_DPI = 300; // 印刷檔解析度（mm → 像素換算用）
+const MERCH_TRIM_RULES: { name: string; match: RegExp; exclude?: RegExp; trimMm: { top: number; bottom: number; left: number; right: number } }[] = [
+  // 無框畫：檔名有「蠶絲膜」→ 照原樣顯示；沒有 → 上下左右各內縮 48mm
+  { name: "無框畫（無蠶絲膜）", match: /無框畫/, exclude: /蠶絲膜/, trimMm: { top: 48, bottom: 48, left: 48, right: 48 } },
+  // 新增廠商範例：{ name: "某廠 A4 框", match: /A4框/, trimMm: { top: 20, bottom: 20, left: 20, right: 20 } },
+];
+const getMerchTrimRule = (name: string) =>
+  MERCH_TRIM_RULES.find(r => r.match.test(name) && !(r.exclude && r.exclude.test(name))) || null;
 
 // ==========================================
 // 🛠️ 核心樣式（與 V1 完全相同）
@@ -161,6 +178,19 @@ const GLOBAL_STYLES = `
   }
 
   .crop-warning-text { background: rgba(255, 77, 79, 0.95); color: #fff; font-size: 0.65rem; padding: 2px 5px; border-radius: 3px; font-weight: 500; letter-spacing: 1px; pointer-events: auto; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+  /* V2.2：裁切線畫在作品外圍，標籤移到框外，不遮擋畫面 */
+  .crop-line-overlay.outside { padding: 0; }
+  .crop-line-overlay.outside .crop-warning-text { position: absolute; top: -22px; right: -2px; white-space: nowrap; }
+
+  /* V2.2：剩餘頁數提醒（同精修校稿） */
+  .nav-btn-floating.has-more { animation: nudge 1.6s ease-in-out infinite; }
+  @keyframes nudge {
+    0%, 100% { box-shadow: 0 4px 10px rgba(0,0,0,0.05), 0 0 0 0 rgba(24,120,128,0.45); }
+    50% { box-shadow: 0 4px 10px rgba(0,0,0,0.05), 0 0 0 10px rgba(24,120,128,0); }
+  }
+  .more-badge { position: absolute; top: -6px; right: -6px; background: #e74c3c; color: #fff; font-size: 0.68rem; font-weight: 700; min-width: 20px; height: 20px; border-radius: 10px; padding: 0 5px; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 6px rgba(231,76,60,0.4); }
+  .page-remaining { margin-right: auto; font-size: 0.85rem; color: #e74c3c; font-weight: 600; }
+  .page-remaining.last { color: #187880; }
 
   .album-flipper { position: absolute; top: 0; bottom: 0; width: 50%; transform-style: preserve-3d; z-index: 30; transition: transform 0.8s cubic-bezier(0.645,0.045,0.355,1); }
   .flipping-next { right: 0; transform-origin: left center; }
@@ -197,7 +227,7 @@ const GLOBAL_STYLES = `
   .finish-btn:hover { background: rgba(24, 120, 128, 0.1); }
 
   .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); display: flex; justify-content: center; align-items: center; z-index: 9999; padding: 15px; }
-  .final-modal-box { display: flex; flex-direction: column; background: #ffffff; border-top: 5px solid #187880; padding: 30px; border-radius: 12px; width: 100%; max-width: 680px; max-height: 85vh; box-shadow: 0 25px 60px rgba(0,0,0,0.2); }
+  .final-modal-box { position: relative; display: flex; flex-direction: column; background: #ffffff; border-top: 5px solid #187880; padding: 30px; border-radius: 12px; width: 100%; max-width: 680px; max-height: 85vh; box-shadow: 0 25px 60px rgba(0,0,0,0.2); }
   .brand-title { flex-shrink: 0; color: #187880; font-size: 1.6rem; text-align: center; }
 
   .legal-content-wrapper { flex: 1; min-height: 0; overflow-y: auto; margin: 15px 0; display: flex; flex-direction: column; gap: 12px; padding-right: 5px; }
@@ -270,7 +300,7 @@ const GLOBAL_STYLES = `
   }
 `;
 
-interface Photo { id: string; name: string; url: string; mimeType?: string; }
+interface Photo { id: string; name: string; url: string; mimeType?: string; w?: number; h?: number; }
 
 // ==========================================
 // 🧰 工具函式（V2 新增）
@@ -346,6 +376,10 @@ export default function App() {
   const [sendingStatus, setSendingStatus] = useState<"approve" | "feedback" | null>(null);
   // V2.1：整本旋轉 90°（手機直拿時跨頁可放大，改為上下翻閱）
   const [isAlbumRotated, setIsAlbumRotated] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  // V2.3：周邊原始尺寸備援（Apps Script 未回傳 w/h 時，以載入後的圖片尺寸估算）
+  const [merchDims, setMerchDims] = useState<Record<string, { w: number; h: number }>>({});
+  const submitRefRef = useRef<{ type: string; ref: string } | null>(null);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
 
   const albumRef = useRef<HTMLDivElement>(null);
@@ -566,24 +600,41 @@ export default function App() {
     setTimeout(() => { setAlbumSpreadIndex(newIndex); setFlipState(null); }, 800);
   };
 
+  // 👑 V2.2：整份校稿（相冊 → 周邊）視為一條順序，看到最後一頁才可送出
+  const totalItems = albumPhotos.length + merchPhotos.length;
+  const currentPos = currentView === 'album' ? albumSpreadIndex : albumPhotos.length + merchIndex;
+  const remainingItems = Math.max(0, totalItems - 1 - currentPos);
+  const goNextGlobal = () => {
+    if (currentView === 'album') {
+      if (albumSpreadIndex < maxSpreads) handlePageChange(albumSpreadIndex + 1);
+      else if (merchPhotos.length > 0 && !flipState) { setCurrentView('merch'); setMerchIndex(0); }
+    } else {
+      setMerchIndex(prev => Math.min(merchPhotos.length - 1, prev + 1));
+    }
+  };
+  const goPrevMerch = () => {
+    if (merchIndex > 0) setMerchIndex(merchIndex - 1);
+    else if (albumPhotos.length > 0) setCurrentView('album');
+  };
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (appMode === 'admin' || showFinalUI || !gatePassed) return;
       if (document.activeElement?.tagName === "TEXTAREA") return;
 
       if (currentView === 'album' && albumPhotos.length > 0) {
-        if (e.code === "ArrowRight") handlePageChange(Math.min(maxSpreads, albumSpreadIndex + 1));
+        if (e.code === "ArrowRight") goNextGlobal();
         if (e.code === "ArrowLeft") handlePageChange(Math.max(0, albumSpreadIndex - 1));
-        if (isAlbumRotated && e.code === "ArrowDown") { e.preventDefault(); handlePageChange(Math.min(maxSpreads, albumSpreadIndex + 1)); }
+        if (isAlbumRotated && e.code === "ArrowDown") { e.preventDefault(); goNextGlobal(); }
         if (isAlbumRotated && e.code === "ArrowUp") { e.preventDefault(); handlePageChange(Math.max(0, albumSpreadIndex - 1)); }
       } else if (currentView === 'merch' && merchPhotos.length > 0) {
         if (e.code === "ArrowRight") setMerchIndex(prev => Math.min(merchPhotos.length - 1, prev + 1));
-        if (e.code === "ArrowLeft") setMerchIndex(prev => Math.max(0, prev - 1));
+        if (e.code === "ArrowLeft") goPrevMerch();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [appMode, currentView, albumSpreadIndex, maxSpreads, flipState, albumPhotos.length, merchPhotos.length, showFinalUI, gatePassed, isAlbumRotated]);
+  }, [appMode, currentView, albumSpreadIndex, maxSpreads, flipState, albumPhotos.length, merchPhotos.length, showFinalUI, gatePassed, isAlbumRotated, merchIndex]);
 
   // 📱 手勢翻頁：一般模式左右滑、旋轉模式上下滑（向上滑 = 下一頁）
   const handleAlbumTouchStart = (e: React.TouchEvent) => {
@@ -599,7 +650,7 @@ export default function App() {
     const main = isAlbumRotated ? dy : dx;
     const cross = isAlbumRotated ? dx : dy;
     if (Math.abs(main) < 50 || Math.abs(main) < Math.abs(cross)) return;
-    if (main < 0) handlePageChange(Math.min(maxSpreads, albumSpreadIndex + 1));
+    if (main < 0) goNextGlobal();
     else handlePageChange(Math.max(0, albumSpreadIndex - 1));
   };
 
@@ -656,7 +707,7 @@ export default function App() {
   };
 
   // ☁️ 雲端備份：存到該案資料夾內「校稿回覆」（JSON＋TXT＋PDF）並自動鎖定連結
-  const backupToCloud = async (type: "approve" | "feedback", ref: string, summary: string) => {
+  const backupToCloud = async (type: "approve" | "feedback", ref: string, summary: string, beacon = false) => {
     const { album, merch } = collectFeedbackItems();
     const payload = {
       action: 'submit',
@@ -671,6 +722,11 @@ export default function App() {
       summary,
       userAgent: navigator.userAgent,
     };
+    // 無修改：用 sendBeacon 背景送出（不等待，立即開 LINE）
+    if (beacon && navigator.sendBeacon) {
+      try { return navigator.sendBeacon(API_URL, new Blob([JSON.stringify(payload)], { type: 'text/plain;charset=utf-8' })); }
+      catch { return false; }
+    }
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), BACKUP_WAIT_MS);
     try {
@@ -690,7 +746,10 @@ export default function App() {
   const handleSendToLine = async (type: "approve" | "feedback") => {
     if (sendingStatus) return; // 防止重複點擊
 
-    const ref = makeRef();
+    // V2.2：同一次送出重按時沿用同一編號，雲端端會自動略過重複資料
+    const prev = submitRefRef.current;
+    const ref = prev && prev.type === type ? prev.ref : makeRef();
+    submitRefRef.current = { type, ref };
     const summary = generateFeedbackSummary();
     let textToSend = "";
     if (type === "approve") {
@@ -705,8 +764,10 @@ export default function App() {
     // 第一重：複製完整內容（必須在任何 await 網路請求之前，iOS 才允許）
     await copyText(textToSend);
 
-    // 第二重：雲端備份（失敗不阻擋客人，LINE 訊息仍有完整文字）
-    const synced = await backupToCloud(type, ref, summary);
+    // 第二重：雲端備份（有修改才等待；無修改背景送出公版紀錄）
+    if (type === "feedback") setIsSyncing(true);
+    const synced = await backupToCloud(type, ref, summary, type === "approve");
+    setIsSyncing(false);
     if (synced) safeStorage.remove(DRAFT_PREFIX + folderId);
 
     // 第三重：LINE 預填文字過長時截斷，避免網址過長無法開啟
@@ -805,11 +866,18 @@ export default function App() {
   const MERCH_CROP_PERCENT = "1.5%";
 
   const isCurrentViewSingle = checkIsSinglePage(albumPhotos[albumSpreadIndex], albumSpreadIndex, albumPhotos.length);
-  const albumCropLineStyle = isCurrentViewSingle
+  const albumCropLineStyleInside = isCurrentViewSingle
     ? (albumSpreadIndex === 0
         ? { top: ALBUM_CROP_Y, bottom: ALBUM_CROP_Y, left: `calc(50% + ${ALBUM_CROP_X})`, right: ALBUM_CROP_X }
         : { top: ALBUM_CROP_Y, bottom: ALBUM_CROP_Y, left: ALBUM_CROP_X, right: `calc(50% + ${ALBUM_CROP_X})` })
     : { top: ALBUM_CROP_Y, bottom: ALBUM_CROP_Y, left: ALBUM_CROP_X, right: ALBUM_CROP_X };
+  // V2.2：外圍模式 → 虛線貼在作品外 CROP_OUT 處，不覆蓋畫面
+  const albumCropLineStyleOutside = isCurrentViewSingle
+    ? (albumSpreadIndex === 0
+        ? { top: CROP_OUT, bottom: CROP_OUT, left: `calc(50% + ${CROP_OUT})`, right: CROP_OUT }
+        : { top: CROP_OUT, bottom: CROP_OUT, left: CROP_OUT, right: `calc(50% + ${CROP_OUT})` })
+    : { top: CROP_OUT, bottom: CROP_OUT, left: CROP_OUT, right: CROP_OUT };
+  const albumCropLineStyle = CROP_LINE_OUTSIDE ? albumCropLineStyleOutside : albumCropLineStyleInside;
 
   let containerTransform = "translateX(0%)";
   if (currentView === 'album') {
@@ -885,10 +953,29 @@ export default function App() {
         onClick={() => setShowAlbumCropLines(!showAlbumCropLines)}
         title="模擬印刷廠的安全裁切範圍"
       >
-        {showAlbumCropLines ? '👁️ 隱藏相冊出血線' : '✂️ 顯示相冊出血線'}
+        {showAlbumCropLines ? '👁️ 隱藏裁切線' : '✂️ 顯示裁切線'}
       </button>
     </div>
   ) : null;
+
+  // V2.3：計算周邊商品的內縮顯示（回傳 null = 照原樣顯示）
+  const getMerchTrim = (p: Photo) => {
+    const rule = getMerchTrimRule(p.name || "");
+    if (!rule) return null;
+    const dims = p.w && p.h ? { w: p.w, h: p.h } : merchDims[p.id];
+    if (!dims) return null;
+    const px = (mm: number) => (mm / 25.4) * MERCH_DPI;
+    const t = rule.trimMm;
+    const fl = px(t.left) / dims.w, fr = px(t.right) / dims.w;
+    const ft = px(t.top) / dims.h, fb = px(t.bottom) / dims.h;
+    const keepW = 1 - fl - fr, keepH = 1 - ft - fb;
+    if (keepW <= 0.2 || keepH <= 0.2) return null; // 尺寸異常時不裁，避免畫面錯亂
+    return {
+      ratio: (dims.w * keepW) / (dims.h * keepH),
+      bgSize: `${100 / keepW}% ${100 / keepH}%`,
+      bgPos: `${fl + fr > 0 ? (fl / (fl + fr)) * 100 : 50}% ${ft + fb > 0 ? (ft / (ft + fb)) * 100 : 50}%`,
+    };
+  };
 
   const currentAlbumPhoto = albumPhotos[albumSpreadIndex];
 
@@ -928,7 +1015,7 @@ export default function App() {
           const ratio = dynamicAspectRatio || 2;
           const rotatedW = `min(66vh, ${(88 * ratio).toFixed(2)}vw)`;
           const goPrev = () => handlePageChange(Math.max(0, albumSpreadIndex - 1));
-          const goNext = () => handlePageChange(Math.min(maxSpreads, albumSpreadIndex + 1));
+          const goNext = goNextGlobal;
           const bookInner = (
             <>
                 <div className={`album-page-base base-left ${baseLeftIndex === 0 ? "is-cover" : ""}`} style={{ visibility: albumPhotos[baseLeftIndex] ? "visible" : "hidden" }}>
@@ -951,8 +1038,8 @@ export default function App() {
                 )}
 
                 {gatePassed && showAlbumCropLines && (
-                  <div className="crop-line-overlay" style={albumCropLineStyle}>
-                    <span className="crop-warning-text">⚠️ 裁切線 (內縮4mm)</span>
+                  <div className={`crop-line-overlay ${CROP_LINE_OUTSIDE ? 'outside' : ''}`} style={albumCropLineStyle}>
+                    <span className="crop-warning-text">✂️ 裁切線</span>
                   </div>
                 )}
             </>
@@ -996,11 +1083,13 @@ export default function App() {
             )}
 
             <button
-              className={`nav-btn-floating ${isAlbumRotated ? 'nav-down' : 'nav-right'}`}
+              className={`nav-btn-floating ${isAlbumRotated ? 'nav-down' : 'nav-right'} ${remainingItems > 0 ? 'has-more' : ''}`}
               onClick={goNext}
-              disabled={albumSpreadIndex === maxSpreads || !!flipState}
+              disabled={(albumSpreadIndex === maxSpreads && merchPhotos.length === 0) || !!flipState}
+              title={remainingItems > 0 ? `還有 ${remainingItems} 頁待確認` : ''}
             >
               {isAlbumRotated ? <span style={{ display: 'inline-block', transform: 'rotate(90deg)' }}>&#10095;</span> : <>&#10095;</>}
+              {remainingItems > 0 && <span className="more-badge">{remainingItems}</span>}
             </button>
           </main>
           );
@@ -1014,23 +1103,60 @@ export default function App() {
 
             <button
               className="nav-btn-floating nav-left"
-              onClick={() => setMerchIndex(prev => Math.max(0, prev - 1))}
-              disabled={merchIndex === 0}
+              onClick={goPrevMerch}
+              disabled={merchIndex === 0 && albumPhotos.length === 0}
             >
               &#10094;
             </button>
 
             <div className="merch-layout-wrapper">
               <div className="merch-image-box">
-                <div className="merch-img-wrapper">
-                   <img src={merchPhotos[merchIndex].url} alt={merchPhotos[merchIndex].name} draggable="false" />
-
-                   {gatePassed && showMerchCropLines && (
-                      <div className="crop-line-overlay" style={{ top: MERCH_CROP_PERCENT, bottom: MERCH_CROP_PERCENT, left: MERCH_CROP_PERCENT, right: MERCH_CROP_PERCENT }}>
-                        <span className="crop-warning-text">⚠️ 裁切線 (內縮8mm)</span>
+                {(() => {
+                  const mp = merchPhotos[merchIndex];
+                  const trim = getMerchTrim(mp);
+                  if (trim) {
+                    const maxH = typeof window !== 'undefined' && window.innerWidth <= 768 ? 50 : 55;
+                    return (
+                      <div
+                        className="merch-img-wrapper"
+                        role="img"
+                        aria-label={mp.name}
+                        style={{
+                          width: `min(100%, calc(${maxH}vh * ${trim.ratio}))`, aspectRatio: trim.ratio, maxHeight: 'none',
+                          backgroundImage: `url("${mp.url}")`, backgroundSize: trim.bgSize, backgroundPosition: trim.bgPos, backgroundRepeat: 'no-repeat',
+                          borderRadius: 2, boxShadow: '0 8px 25px rgba(0,0,0,0.15)',
+                        }}
+                      >
+                        {gatePassed && showMerchCropLines && (
+                      <div className={`crop-line-overlay ${CROP_LINE_OUTSIDE ? 'outside' : ''}`} style={CROP_LINE_OUTSIDE ? { top: CROP_OUT, bottom: CROP_OUT, left: CROP_OUT, right: CROP_OUT } : { top: MERCH_CROP_PERCENT, bottom: MERCH_CROP_PERCENT, left: MERCH_CROP_PERCENT, right: MERCH_CROP_PERCENT }}>
+                        <span className="crop-warning-text">✂️ 裁切線</span>
                       </div>
                     )}
-                </div>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="merch-img-wrapper">
+                      <img
+                        src={mp.url}
+                        alt={mp.name}
+                        draggable="false"
+                        onLoad={(e) => {
+                          const img = e.currentTarget;
+                          // lh3 寬度上限 2400：剛好 2400 代表可能被縮圖，無法得知原尺寸 → 不裁（寧可多顯示）
+                          if (!mp.w && getMerchTrimRule(mp.name || "") && !merchDims[mp.id] && img.naturalWidth && img.naturalWidth !== 2400) {
+                            setMerchDims(d => ({ ...d, [mp.id]: { w: img.naturalWidth, h: img.naturalHeight } }));
+                          }
+                        }}
+                      />
+                      {gatePassed && showMerchCropLines && (
+                      <div className={`crop-line-overlay ${CROP_LINE_OUTSIDE ? 'outside' : ''}`} style={CROP_LINE_OUTSIDE ? { top: CROP_OUT, bottom: CROP_OUT, left: CROP_OUT, right: CROP_OUT } : { top: MERCH_CROP_PERCENT, bottom: MERCH_CROP_PERCENT, left: MERCH_CROP_PERCENT, right: MERCH_CROP_PERCENT }}>
+                        <span className="crop-warning-text">✂️ 裁切線</span>
+                      </div>
+                    )}
+                    </div>
+                  );
+                })()}
               </div>
 
               {gatePassed && (
@@ -1039,17 +1165,19 @@ export default function App() {
                   onClick={() => setShowMerchCropLines(!showMerchCropLines)}
                   title="模擬印刷廠的安全裁切範圍"
                 >
-                  {showMerchCropLines ? '👁️ 隱藏商品出血線' : '✂️ 顯示商品出血線'}
+                  {showMerchCropLines ? '👁️ 隱藏裁切線' : '✂️ 顯示裁切線'}
                 </button>
               )}
             </div>
 
             <button
-              className="nav-btn-floating nav-right"
-              onClick={() => setMerchIndex(prev => Math.min(merchPhotos.length - 1, prev + 1))}
+              className={`nav-btn-floating nav-right ${remainingItems > 0 ? 'has-more' : ''}`}
+              onClick={goNextGlobal}
               disabled={merchIndex === merchPhotos.length - 1}
+              title={remainingItems > 0 ? `還有 ${remainingItems} 頁待確認` : ''}
             >
               &#10095;
+              {remainingItems > 0 && <span className="more-badge">{remainingItems}</span>}
             </button>
 
           </main>
@@ -1102,7 +1230,14 @@ export default function App() {
           )}
 
           <div className="navigation-bar">
-             <button className="finish-btn" onClick={() => setShowFinalUI(true)}>完成並送出</button>
+             <div className={`page-remaining ${remainingItems === 0 ? 'last' : ''}`}>
+               {remainingItems > 0 ? `還有 ${remainingItems} 頁待確認` : '✓ 已看完全部內容'}
+             </div>
+             {remainingItems > 0 ? (
+               <button className="finish-btn" onClick={goNextGlobal} disabled={!!flipState}>下一頁 ›</button>
+             ) : (
+               <button className="finish-btn" onClick={() => setShowFinalUI(true)}>完成並送出</button>
+             )}
           </div>
         </footer>
 
@@ -1148,34 +1283,32 @@ export default function App() {
             <h2 className="brand-title" style={{ fontSize: '1.4rem' }}>Layout Proofing 校稿結果</h2>
             <p style={{ color: '#aaa', fontSize: '0.85rem', marginBottom: '10px', textAlign: 'center' }}>請點擊按鈕，系統將為您跳轉至 LINE。</p>
 
-            <div className="action-cards-container">
-              <div className="action-card">
-                <h3 className="card-title" style={{ color: '#187880' }}>✅ 選項一：校稿沒有問題</h3>
-                <p className="card-desc">所有項目排版與周邊商品皆確認無誤，請印務團隊照此定稿版本進行製作。</p>
-                <button className="modal-copy-btn" onClick={() => handleSendToLine("approve")}>
-                  {sendingStatus === "approve" ? "✅ 已複製！正在開啟 LINE..." : "💬 傳送確認訊息至 LINE"}
-                </button>
-              </div>
-
-              <div className="action-card">
-                <h3 className="card-title" style={{ color: '#ff4d4f' }}>⚠️ 選項二：希望更換或調整</h3>
-                <p className="card-desc" style={{marginBottom: '5px'}}>以下為您剛才填寫的修改建議：</p>
-
-                {generateFeedbackSummary() ? (
-                  <div className="final-feedback-summary">
-                    {generateFeedbackSummary()}
+            {(() => {
+              const summary = generateFeedbackSummary();
+              const hasFeedback = !!summary;
+              const busyText = isSyncing ? "☁️ 正在同步修改需求，請稍候…" : "✅ 已複製！正在開啟 LINE...";
+              return (
+                <div className="action-cards-container">
+                  <div className="action-card">
+                    {hasFeedback ? (
+                      <>
+                        <h3 className="card-title" style={{ color: '#ff4d4f' }}>⚠️ 您有填寫修改需求</h3>
+                        <p className="card-desc" style={{ marginBottom: '5px' }}>送出後將同步給我們，並開啟 LINE 自動帶入以下內容：</p>
+                        <div className="final-feedback-summary">{summary}</div>
+                      </>
+                    ) : (
+                      <>
+                        <h3 className="card-title" style={{ color: '#187880' }}>✅ 所有項目確認無誤</h3>
+                        <p className="card-desc">您沒有填寫任何修改需求，送出後將通知印務團隊照此定稿版本進行製作。</p>
+                      </>
+                    )}
+                    <button className="modal-copy-btn" onClick={() => handleSendToLine(hasFeedback ? "feedback" : "approve")} disabled={!!sendingStatus}>
+                      {sendingStatus ? busyText : (hasFeedback ? "💬 送出修改需求至 LINE" : "💬 傳送確認訊息至 LINE")}
+                    </button>
                   </div>
-                ) : (
-                  <div className="final-feedback-summary" style={{ fontStyle: 'italic', opacity: 0.5, textAlign: 'center', paddingTop: '15px', paddingBottom: '15px' }}>
-                    您尚未填寫任何調整建議喔！
-                  </div>
-                )}
-
-                <button className="modal-copy-btn outline" onClick={() => handleSendToLine("feedback")}>
-                  {sendingStatus === "feedback" ? "✅ 已複製！正在開啟 LINE..." : "💬 傳送調整需求至 LINE"}
-                </button>
-              </div>
-            </div>
+                </div>
+              );
+            })()}
 
             <p style={{fontSize: '0.75rem', color: '#888', marginTop: '15px', textAlign: 'center'}}>
               💡 提示：若您的電腦無法自動開啟 LINE，訊息已為您複製完成，請直接前往 LINE 手動貼上。
