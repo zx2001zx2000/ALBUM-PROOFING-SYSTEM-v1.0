@@ -24,8 +24,9 @@ const CROP_OUT = "-7px";
 // ==========================================
 const MERCH_DPI = 300; // 印刷檔解析度（mm → 像素換算用）
 const MERCH_TRIM_RULES: { name: string; match: RegExp; exclude?: RegExp; trimMm: { top: number; bottom: number; left: number; right: number } }[] = [
-  // 無框畫：檔名有「蠶絲膜」→ 照原樣顯示；沒有 → 上下左右各內縮 48mm
-  { name: "無框畫（無蠶絲膜）", match: /無框畫/, exclude: /蠶絲膜/, trimMm: { top: 48, bottom: 48, left: 48, right: 48 } },
+  // 無框畫類（檔名含「無框畫」或「數字＋框」如 30框、24框，或 A4框／A3框）：
+  // 檔名有「蠶絲膜」→ 照原樣顯示；沒有 → 上下左右各內縮 48mm
+  { name: "無框畫類（無蠶絲膜）", match: /無框畫|\d+\s*框|A\d\s*框/i, exclude: /蠶絲膜/, trimMm: { top: 48, bottom: 48, left: 48, right: 48 } },
   // 新增廠商範例：{ name: "某廠 A4 框", match: /A4框/, trimMm: { top: 20, bottom: 20, left: 20, right: 20 } },
 ];
 const getMerchTrimRule = (name: string) =>
@@ -95,11 +96,18 @@ const GLOBAL_STYLES = `
   }
   .brand-logo-text-small { font-family: "Montserrat", sans-serif; font-weight: 700; font-size: 1.2rem; letter-spacing: 2px; color: #187880; white-space: nowrap; }
 
-  .view-tabs { display: flex; gap: 10px; overflow-x: auto; flex: 1; justify-content: center; padding-bottom: 2px; }
+  .view-tabs { display: flex; gap: 10px; overflow-x: auto; flex: 1; justify-content: center; padding: 8px 8px 2px; }
   .view-tabs::-webkit-scrollbar { height: 0px; }
   .tab-btn { background: #ffffff; border: 1px solid #ddd; color: #666; padding: 8px 20px; border-radius: 20px; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
   .tab-btn:hover { border-color: #187880; color: #187880; }
   .tab-btn.active { background: rgba(24, 120, 128, 0.08); border-color: #187880; color: #187880; }
+  /* V2.6：周邊商品提醒 */
+  .tab-btn { position: relative; }
+  .tab-btn .more-badge { top: -7px; right: -7px; }
+  .tab-btn.tab-attention { border-color: #e74c3c; color: #e74c3c; animation: tabPulse 1.6s ease-in-out infinite; }
+  @keyframes tabPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(231,76,60,0.35); } 50% { box-shadow: 0 0 0 7px rgba(231,76,60,0); } }
+  .merch-hint { background: #fffbe6; color: #8a6d1d; border-bottom: 1px solid #f0e6b8; text-align: center; font-size: 0.85rem; font-weight: 600; padding: 8px 15px; cursor: pointer; }
+  .merch-hint:hover { background: #fff6cc; }
 
   .stage-center-area {
     flex: 1;
@@ -350,7 +358,7 @@ const safeStorage = {
   remove(key: string) { try { localStorage.removeItem(key); } catch { /* ignore */ } },
 };
 
-export default function App() {
+function AppInner() {
   const [appMode, setAppMode] = useState<'admin' | 'viewer'>('admin');
   const [displayName, setDisplayName] = useState("");
   const [folderLink, setFolderLink] = useState("");
@@ -378,6 +386,7 @@ export default function App() {
   // V2.1：整本旋轉 90°（手機直拿時跨頁可放大，改為上下翻閱）
   const [isAlbumRotated, setIsAlbumRotated] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [merchVisited, setMerchVisited] = useState(false);
   // V2.3：周邊原始尺寸備援（Apps Script 未回傳 w/h 時，以載入後的圖片尺寸估算）
   const [merchDims, setMerchDims] = useState<Record<string, { w: number; h: number }>>({});
   const submitRefRef = useRef<{ type: string; ref: string } | null>(null);
@@ -407,6 +416,24 @@ export default function App() {
     if (!folderId || !draftReadyRef.current) return;
     safeStorage.set(DRAFT_PREFIX + folderId, JSON.stringify({ savedAt: Date.now(), feedbacks: allFeedbacks }));
   }, [allFeedbacks, folderId]);
+
+  useEffect(() => { if (currentView === 'merch') setMerchVisited(true); }, [currentView]);
+
+  // 🛡️ V2.6：關閉瀏覽器自動翻譯。Chrome 翻譯會改寫畫面文字（週邊／相簿／裁線），
+  //    並在切換按鈕文字時造成 React 當掉（畫面全黑），旋轉時特別容易發生。
+  useEffect(() => {
+    try {
+      const html = document.documentElement;
+      html.lang = 'zh-Hant-TW';
+      html.setAttribute('translate', 'no');
+      html.classList.add('notranslate');
+      if (!document.querySelector('meta[name="google"][content="notranslate"]')) {
+        const m = document.createElement('meta');
+        m.name = 'google'; m.content = 'notranslate';
+        document.head.appendChild(m);
+      }
+    } catch { /* ignore */ }
+  }, []);
 
   // 🚀 預載前後兩個跨頁，翻頁時不再出現白頁閃爍
   useEffect(() => {
@@ -994,13 +1021,14 @@ export default function App() {
                 className={`tab-btn ${currentView === 'album' ? 'active' : ''}`}
                 onClick={() => setCurrentView('album')}
               >
-                📖 3D 相冊校稿
+                <span>📖 3D 相冊校稿</span>
               </button>
               <button
-                className={`tab-btn ${currentView === 'merch' ? 'active' : ''}`}
+                className={`tab-btn ${currentView === 'merch' ? 'active' : ''} ${!merchVisited ? 'tab-attention' : ''}`}
                 onClick={() => setCurrentView('merch')}
               >
-                🖼️ 周邊商品校稿
+                <span>🖼️ 周邊商品校稿</span>
+                {!merchVisited && <span className="more-badge">{merchPhotos.length}</span>}
               </button>
             </div>
           )}
@@ -1010,6 +1038,13 @@ export default function App() {
             <button className="logout-btn" onClick={() => { setAlbumPhotos([]); setMerchPhotos([]); setGatePassed(false); setShowFinalUI(false); setError("您已離開校稿頁面，填寫內容已暫存於此裝置，重新整理即可繼續。"); }}>離開</button>
           </div>
         </header>
+
+        {/* V2.6：提醒客人周邊商品也要校稿（點一下直接切換） */}
+        {gatePassed && albumPhotos.length > 0 && merchPhotos.length > 0 && !merchVisited && (
+          <div className="merch-hint" onClick={() => setCurrentView('merch')}>
+            <span>📦 本次另有 {merchPhotos.length} 件周邊商品需要校稿，請點選上方「周邊商品校稿」👆</span>
+          </div>
+        )}
 
         {currentView === 'album' && albumPhotos.length > 0 && (() => {
           // V2.1：旋轉時書本寬度 W 變成螢幕上的高度
@@ -1322,5 +1357,38 @@ export default function App() {
         </div>
       )}
     </React.Fragment>
+  );
+}
+
+// 🛡️ V2.6：防當機保護 — 萬一畫面出錯（例如瀏覽器翻譯干擾），顯示提示而不是一片黑
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean }> {
+  state = { hasError: false };
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(err: unknown) { console.error("App crashed", err); }
+  render() {
+    if (!this.state.hasError) return this.props.children;
+    return (
+      <div translate="no" className="notranslate" style={{ position: 'fixed', inset: 0, background: '#F4F7F6', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, fontFamily: '"Helvetica Neue", Helvetica, Arial, sans-serif' }}>
+        <div style={{ background: '#fff', borderRadius: 12, padding: '36px 28px', maxWidth: 420, textAlign: 'center', boxShadow: '0 15px 35px rgba(0,0,0,0.06)', border: '1px solid #E5E9EA' }}>
+          <div style={{ fontSize: '2.4rem', marginBottom: 10 }}>🔄</div>
+          <h2 style={{ color: '#187880', fontSize: '1.2rem', marginBottom: 10 }}>畫面需要重新整理</h2>
+          <p style={{ color: '#555', fontSize: '0.9rem', lineHeight: 1.7, marginBottom: 20 }}>
+            您填寫的修改建議已自動暫存，重新整理後即可繼續。<br />
+            若瀏覽器有開啟「翻譯此網頁」，請先關閉翻譯。
+          </p>
+          <button onClick={() => window.location.reload()} style={{ width: '100%', padding: 14, background: '#187880', color: '#fff', border: 'none', borderRadius: 6, fontWeight: 600, fontSize: '1rem', cursor: 'pointer' }}>
+            重新整理
+          </button>
+        </div>
+      </div>
+    );
+  }
+}
+
+export default function App() {
+  return (
+    <ErrorBoundary>
+      <AppInner />
+    </ErrorBoundary>
   );
 }
