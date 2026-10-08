@@ -14,7 +14,7 @@ const LINE_SUMMARY_LIMIT = 500;                // LINE 預填摘要字數上限�
 const USE_FAST_CDN = true;                     // 圖片優先走 Google lh3 CDN，失敗自動退回原網址
 // V2.4：裁切線位置 true = 畫在作品外圍（不遮擋畫面）；false = 依比例內縮（原版）
 const CROP_LINE_OUTSIDE = true;        // 周邊商品：外圍
-const ALBUM_CROP_LINE_OUTSIDE = false; // 相冊：維持原版內縮 4mm
+const ALBUM_CROP_LINE_OUTSIDE = false; // 相冊：虛線維持原版內縮 4mm（標籤固定在框外）
 const CROP_OUT = "-7px";
 
 // ==========================================
@@ -1039,9 +1039,13 @@ export default function App() {
                 )}
 
                 {gatePassed && showAlbumCropLines && (
-                  <div className={`crop-line-overlay ${ALBUM_CROP_LINE_OUTSIDE ? 'outside' : ''}`} style={albumCropLineStyle}>
-                    <span className="crop-warning-text">{ALBUM_CROP_LINE_OUTSIDE ? '✂️ 裁切線' : '⚠️ 裁切線 (內縮4mm)'}</span>
-                  </div>
+                  <>
+                    {/* V2.5：虛線維持原版內縮位置；標籤改新版「✂️ 裁切線」並放在作品外，不遮擋畫面 */}
+                    <div className="crop-line-overlay outside" style={albumCropLineStyle} />
+                    <div style={{ position: 'absolute', top: '-22px', right: isCurrentViewSingle && albumSpreadIndex !== 0 ? '50%' : '0', zIndex: 500, pointerEvents: 'none' }}>
+                      <span className="crop-warning-text">✂️ 裁切線</span>
+                    </div>
+                  </>
                 )}
             </>
           );
