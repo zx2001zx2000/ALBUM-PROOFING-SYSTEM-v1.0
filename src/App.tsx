@@ -12,8 +12,9 @@ const DRAFT_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 草稿保留 30 天
 const BACKUP_WAIT_MS = 8000;                   // 送出時等待雲端同步的上限
 const LINE_SUMMARY_LIMIT = 500;                // LINE 預填摘要字數上限（避免網址過長開不了）
 const USE_FAST_CDN = true;                     // 圖片優先走 Google lh3 CDN，失敗自動退回原網址
-// V2.2：裁切線位置 true = 畫在作品外圍（不遮擋畫面）；false = 依比例內縮（舊版）
-const CROP_LINE_OUTSIDE = true;
+// V2.4：裁切線位置 true = 畫在作品外圍（不遮擋畫面）；false = 依比例內縮（原版）
+const CROP_LINE_OUTSIDE = true;        // 周邊商品：外圍
+const ALBUM_CROP_LINE_OUTSIDE = false; // 相冊：維持原版內縮 4mm
 const CROP_OUT = "-7px";
 
 // ==========================================
@@ -877,7 +878,7 @@ export default function App() {
         ? { top: CROP_OUT, bottom: CROP_OUT, left: `calc(50% + ${CROP_OUT})`, right: CROP_OUT }
         : { top: CROP_OUT, bottom: CROP_OUT, left: CROP_OUT, right: `calc(50% + ${CROP_OUT})` })
     : { top: CROP_OUT, bottom: CROP_OUT, left: CROP_OUT, right: CROP_OUT };
-  const albumCropLineStyle = CROP_LINE_OUTSIDE ? albumCropLineStyleOutside : albumCropLineStyleInside;
+  const albumCropLineStyle = ALBUM_CROP_LINE_OUTSIDE ? albumCropLineStyleOutside : albumCropLineStyleInside;
 
   let containerTransform = "translateX(0%)";
   if (currentView === 'album') {
@@ -1038,8 +1039,8 @@ export default function App() {
                 )}
 
                 {gatePassed && showAlbumCropLines && (
-                  <div className={`crop-line-overlay ${CROP_LINE_OUTSIDE ? 'outside' : ''}`} style={albumCropLineStyle}>
-                    <span className="crop-warning-text">✂️ 裁切線</span>
+                  <div className={`crop-line-overlay ${ALBUM_CROP_LINE_OUTSIDE ? 'outside' : ''}`} style={albumCropLineStyle}>
+                    <span className="crop-warning-text">{ALBUM_CROP_LINE_OUTSIDE ? '✂️ 裁切線' : '⚠️ 裁切線 (內縮4mm)'}</span>
                   </div>
                 )}
             </>
