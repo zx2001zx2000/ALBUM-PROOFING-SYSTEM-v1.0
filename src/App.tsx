@@ -18,19 +18,45 @@ const ALBUM_CROP_LINE_OUTSIDE = false; // 相冊：虛線維持原版內縮 4mm�
 const CROP_OUT = "-7px";
 
 // ==========================================
-// 🖼️ V2.3 周邊商品顯示規則（方案 A：依檔名判斷，可持續擴充）
-// 給客人的檔案＝給廠商的印刷檔；部分品項的外圈是包邊用，顯示時往內裁掉，
-// 讓客人看到的是「掛上牆後的樣子」。裁切線樣式與一般品項一致。
+// 🖼️ V2.7 周邊商品顯示規則（依《框類內縮尺寸表》，單位 mm）
+// 給客人的檔案＝給廠商的印刷檔；外圈是包邊用，顯示時往內裁掉（trim），
+// 讓客人看到「掛上牆後的樣子」；裁切虛線再從顯示範圍往內 crop mm。
+// 檔名含「蠶絲膜」→ 一律照原樣顯示（不裁）。由上往下比對，先符合者優先。
+// 比對前檔名會統一：去空白、轉小寫、× ＊ * → x
 // ==========================================
 const MERCH_DPI = 300; // 印刷檔解析度（mm → 像素換算用）
-const MERCH_TRIM_RULES: { name: string; match: RegExp; exclude?: RegExp; trimMm: { top: number; bottom: number; left: number; right: number } }[] = [
-  // 無框畫類（檔名含「無框畫」或「數字＋框」如 30框、24框，或 A4框／A3框）：
-  // 檔名有「蠶絲膜」→ 照原樣顯示；沒有 → 上下左右各內縮 48mm
-  { name: "無框畫類（無蠶絲膜）", match: /無框畫|\d+\s*框|A\d\s*框/i, exclude: /蠶絲膜/, trimMm: { top: 48, bottom: 48, left: 48, right: 48 } },
-  // 新增廠商範例：{ name: "某廠 A4 框", match: /A4框/, trimMm: { top: 20, bottom: 20, left: 20, right: 20 } },
+const MERCH_SKIP = /蠶絲膜/;
+type Mm4 = { top: number; bottom: number; left: number; right: number };
+const mmAll = (n: number): Mm4 => ({ top: n, bottom: n, left: n, right: n });
+const MERCH_TRIM_RULES: { name: string; match: RegExp; orient?: 'portrait' | 'landscape'; trimMm: Mm4; cropMm: number }[] = [
+  // ——— 尺寸表（品名 → 上下左右內縮／裁切線）———
+  { name: "40x60(四宮格)",            match: /40x60.*四宮格|四宮格/,              trimMm: mmAll(40), cropMm: 10 },
+  { name: "40x60橫式",                match: /40x60橫式/,                        trimMm: mmAll(50), cropMm: 4 },
+  { name: "40x60直 16x24-51x71cm",    match: /40x60直|16x24直|51x71.*直/,        trimMm: { top: 40, bottom: 40, left: 42, right: 42 }, cropMm: 10 },
+  { name: "40x60橫 16x24-51x71cm",    match: /40x60橫|16x24橫|51x71.*橫/,        trimMm: { top: 42, bottom: 42, left: 40, right: 40 }, cropMm: 10 },
+  { name: "55x55cm-65x65cm",          match: /55x55|65x65/,                      trimMm: mmAll(40), cropMm: 9 },
+  { name: "60x90cm-70x100cm",         match: /60x90|70x100/,                     trimMm: mmAll(45), cropMm: 10 },
+  { name: "30框",                     match: /(^|[^\d])30框/,                    trimMm: mmAll(50), cropMm: 4 },
+  { name: "55框",                     match: /(^|[^\d])55框/,                    trimMm: mmAll(50), cropMm: 4 },
+  { name: "A4框直",                   match: /a4框直|a4直框/,                    trimMm: mmAll(48), cropMm: 4 },
+  { name: "A4框橫",                   match: /a4框橫|a4橫框/,                    trimMm: mmAll(52), cropMm: 4 },
+  // ——— 檔名沒寫直／橫時，依照片方向自動判斷 ———
+  { name: "40x60（未標直橫）→ 直",     match: /40x60|16x24|51x71/, orient: 'portrait',  trimMm: { top: 40, bottom: 40, left: 42, right: 42 }, cropMm: 10 },
+  { name: "40x60（未標直橫）→ 橫",     match: /40x60|16x24|51x71/, orient: 'landscape', trimMm: { top: 42, bottom: 42, left: 40, right: 40 }, cropMm: 10 },
+  { name: "A4框（未標直橫）→ 直",      match: /a4框/, orient: 'portrait',  trimMm: mmAll(48), cropMm: 4 },
+  { name: "A4框（未標直橫）→ 橫",      match: /a4框/, orient: 'landscape', trimMm: mmAll(52), cropMm: 4 },
+  // ——— 備援：表外的無框畫／數字框，沿用 48mm＋裁切線 4mm ———
+  { name: "其他無框畫／數字框（備援）", match: /無框畫|\d+框|a\d框/,              trimMm: mmAll(48), cropMm: 4 },
 ];
-const getMerchTrimRule = (name: string) =>
-  MERCH_TRIM_RULES.find(r => r.match.test(name) && !(r.exclude && r.exclude.test(name))) || null;
+const normalizeMerchName = (name: string) =>
+  (name || "").replace(/\s+/g, "").replace(/[×＊*Ｘ]/g, "x").toLowerCase();
+// dims 未知時（只想知道「是否可能套用規則」）方向條件視為符合
+const getMerchTrimRule = (name: string, dims?: { w: number; h: number }) => {
+  const n = normalizeMerchName(name);
+  if (MERCH_SKIP.test(n)) return null;
+  const orient = dims ? (dims.w >= dims.h ? 'landscape' : 'portrait') : null;
+  return MERCH_TRIM_RULES.find(r => r.match.test(n) && (!r.orient || !orient || r.orient === orient)) || null;
+};
 
 // ==========================================
 // 🛠️ 核心樣式（與 V1 完全相同）
@@ -988,20 +1014,25 @@ function AppInner() {
 
   // V2.3：計算周邊商品的內縮顯示（回傳 null = 照原樣顯示）
   const getMerchTrim = (p: Photo) => {
-    const rule = getMerchTrimRule(p.name || "");
-    if (!rule) return null;
     const dims = p.w && p.h ? { w: p.w, h: p.h } : merchDims[p.id];
     if (!dims) return null;
+    const rule = getMerchTrimRule(p.name || "", dims);
+    if (!rule) return null;
     const px = (mm: number) => (mm / 25.4) * MERCH_DPI;
     const t = rule.trimMm;
     const fl = px(t.left) / dims.w, fr = px(t.right) / dims.w;
     const ft = px(t.top) / dims.h, fb = px(t.bottom) / dims.h;
     const keepW = 1 - fl - fr, keepH = 1 - ft - fb;
     if (keepW <= 0.2 || keepH <= 0.2) return null; // 尺寸異常時不裁，避免畫面錯亂
+    const shownW = dims.w * keepW, shownH = dims.h * keepH;
     return {
-      ratio: (dims.w * keepW) / (dims.h * keepH),
+      ruleName: rule.name,
+      ratio: shownW / shownH,
       bgSize: `${100 / keepW}% ${100 / keepH}%`,
       bgPos: `${fl + fr > 0 ? (fl / (fl + fr)) * 100 : 50}% ${ft + fb > 0 ? (ft / (ft + fb)) * 100 : 50}%`,
+      // 裁切虛線：在顯示範圍內再往內 cropMm
+      cropX: `${(px(rule.cropMm) / shownW) * 100}%`,
+      cropY: `${(px(rule.cropMm) / shownH) * 100}%`,
     };
   };
 
@@ -1168,10 +1199,13 @@ function AppInner() {
                         }}
                       >
                         {gatePassed && showMerchCropLines && (
-                      <div className={`crop-line-overlay ${CROP_LINE_OUTSIDE ? 'outside' : ''}`} style={CROP_LINE_OUTSIDE ? { top: CROP_OUT, bottom: CROP_OUT, left: CROP_OUT, right: CROP_OUT } : { top: MERCH_CROP_PERCENT, bottom: MERCH_CROP_PERCENT, left: MERCH_CROP_PERCENT, right: MERCH_CROP_PERCENT }}>
-                        <span className="crop-warning-text">✂️ 裁切線</span>
-                      </div>
-                    )}
+                          <>
+                            <div className="crop-line-overlay outside" style={{ top: trim.cropY, bottom: trim.cropY, left: trim.cropX, right: trim.cropX }} />
+                            <div style={{ position: 'absolute', top: '-22px', right: 0, zIndex: 500, pointerEvents: 'none' }}>
+                              <span className="crop-warning-text">✂️ 裁切線</span>
+                            </div>
+                          </>
+                        )}
                       </div>
                     );
                   }
