@@ -21,12 +21,13 @@ const CROP_OUT = "-7px";
 // 🖼️ V2.7 周邊商品顯示規則（依《框類內縮尺寸表》，單位 mm）
 // 給客人的檔案＝給廠商的印刷檔；外圈是包邊用，顯示時往內裁掉（trim），
 // 讓客人看到「掛上牆後的樣子」；裁切虛線再從顯示範圍往內 crop mm。
-// 檔名含「蠶絲膜／蠶絲」→ 照原樣顯示（不裁），但裁切虛線畫在「內縮＋裁切」的同一位置。
+// 檔名含「蠶絲膜／蠶絲」→ 照原樣顯示（不裁），裁切虛線在圖檔邊緣往內 4mm（不套下表）。
 // 由上往下比對，先符合者優先。
 // 比對前檔名會統一：去空白、轉小寫、× ＊ * → x
 // ==========================================
 const MERCH_DPI = 300; // 印刷檔解析度（mm → 像素換算用）
-const MERCH_SILK = /蠶絲/; // 蠶絲膜（含「蠶絲」簡寫）：照原樣顯示，裁切線位置與無膜版相同
+const MERCH_SILK = /蠶絲/;
+const SILK_CROP_MM = 4; // V2.11：蠶絲膜（含「蠶絲」簡寫）不論尺寸，照原樣顯示，裁切線＝圖檔邊緣往內 4mm
 type Mm4 = { top: number; bottom: number; left: number; right: number };
 const mmAll = (n: number): Mm4 => ({ top: n, bottom: n, left: n, right: n });
 const MERCH_TRIM_RULES: { name: string; match: RegExp; orient?: 'portrait' | 'landscape'; trimMm: Mm4; cropMm: number }[] = [
@@ -1043,20 +1044,17 @@ function AppInner() {
   const getMerchTrim = (p: Photo) => {
     const dims = p.w && p.h ? { w: p.w, h: p.h } : merchDims[p.id];
     if (!dims) return null;
+    const px = (mm: number) => (mm / 25.4) * MERCH_DPI;
+    const pct = (v: number) => `${v * 100}%`;
+    // V2.11：蠶絲膜（任何尺寸）→ 整張照原樣顯示，裁切虛線一律在圖檔邊緣往內 SILK_CROP_MM
+    if (MERCH_SILK.test(normalizeMerchName(p.name || ""))) {
+      const cx = px(SILK_CROP_MM) / dims.w, cy = px(SILK_CROP_MM) / dims.h;
+      if (cx >= 0.4 || cy >= 0.4) return null;
+      return { ruleName: "蠶絲膜", silk: true as const, crop: { top: pct(cy), bottom: pct(cy), left: pct(cx), right: pct(cx) } };
+    }
     const rule = getMerchTrimRule(p.name || "", dims);
     if (!rule) return null;
-    const px = (mm: number) => (mm / 25.4) * MERCH_DPI;
     const t = rule.trimMm, c = rule.cropMm;
-    const pct = (v: number) => `${v * 100}%`;
-    // 蠶絲膜：整張照原樣顯示，虛線在（包邊內縮＋裁切）處，與無膜版位置一致
-    if (MERCH_SILK.test(normalizeMerchName(p.name || ""))) {
-      const crop = {
-        top: pct(px(t.top + c) / dims.h), bottom: pct(px(t.bottom + c) / dims.h),
-        left: pct(px(t.left + c) / dims.w), right: pct(px(t.right + c) / dims.w),
-      };
-      if (parseFloat(crop.left) + parseFloat(crop.right) >= 80 || parseFloat(crop.top) + parseFloat(crop.bottom) >= 80) return null;
-      return { ruleName: rule.name, silk: true as const, crop };
-    }
     const fl = px(t.left) / dims.w, fr = px(t.right) / dims.w;
     const ft = px(t.top) / dims.h, fb = px(t.bottom) / dims.h;
     const keepW = 1 - fl - fr, keepH = 1 - ft - fb;
@@ -1262,7 +1260,7 @@ function AppInner() {
                         onLoad={(e) => {
                           const img = e.currentTarget;
                           // lh3 寬度上限 2400：剛好 2400 代表可能被縮圖，無法得知原尺寸 → 不裁（寧可多顯示）
-                          if (!mp.w && getMerchTrimRule(mp.name || "") && !merchDims[mp.id] && img.naturalWidth && img.naturalWidth !== 2400) {
+                          if (!mp.w && (getMerchTrimRule(mp.name || "") || MERCH_SILK.test(normalizeMerchName(mp.name || ""))) && !merchDims[mp.id] && img.naturalWidth && img.naturalWidth !== 2400) {
                             setMerchDims(d => ({ ...d, [mp.id]: { w: img.naturalWidth, h: img.naturalHeight } }));
                           }
                         }}
