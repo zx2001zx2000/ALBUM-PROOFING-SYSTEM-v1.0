@@ -138,7 +138,7 @@ const GLOBAL_STYLES = `
   .tab-btn.active { background: rgba(24, 120, 128, 0.08); border-color: #187880; color: #187880; }
   /* V2.8：相冊中央翻折線 */
   .fold-line { position: absolute; top: 0; bottom: 0; left: 50%; width: 0; border-left: 2px dashed rgba(24, 120, 128, 0.85); transform: translateX(-1px); z-index: 460; pointer-events: none; }
-  .fold-label { position: absolute; left: 50%; bottom: 6px; transform: translateX(-50%); background: rgba(24, 120, 128, 0.9); color: #fff; font-size: 0.62rem; padding: 2px 7px; border-radius: 10px; white-space: nowrap; letter-spacing: 0.5px; z-index: 461; pointer-events: none; }
+  .fold-label { position: absolute; left: 50%; bottom: -21px; transform: translateX(-50%); background: rgba(24, 120, 128, 0.9); color: #fff; font-size: 0.62rem; padding: 2px 7px; border-radius: 10px; white-space: nowrap; letter-spacing: 0.5px; z-index: 461; pointer-events: none; }
 
   /* V2.6：周邊商品提醒 */
   .tab-btn { position: relative; }
@@ -206,7 +206,7 @@ const GLOBAL_STYLES = `
   .crop-toggle-btn-inline.active { background: #ff4d4f; color: #fff; border-color: #ff4d4f; }
 
   /* V2.1 旋轉相冊 */
-  .album-tool-row { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
+  .album-tool-row { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; padding-top: 12px; } /* V2.12：預留翻折線標示空間 */
   .album-rotate-stage { position: relative; width: 100%; touch-action: pinch-zoom; }
   .album-book-container.is-rotated { position: absolute; top: 50%; left: 50%; perspective: 2500px; }
   .nav-btn-floating.nav-up { left: auto; right: 40px; top: calc(50% - 28px); }
