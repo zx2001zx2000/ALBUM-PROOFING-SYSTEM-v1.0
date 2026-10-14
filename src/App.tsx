@@ -142,6 +142,25 @@ const GLOBAL_STYLES = `
   .fold-line { position: absolute; top: 0; bottom: 0; left: 50%; width: 0; border-left: 2px dashed rgba(24, 120, 128, 0.85); transform: translateX(-1px); z-index: 460; pointer-events: none; }
   .fold-label { position: absolute; left: 50%; top: calc(100% + 8px); bottom: auto; transform: translateX(-50%); line-height: 1.4; background: rgba(24, 120, 128, 0.9); color: #fff; font-size: 0.62rem; padding: 2px 7px; border-radius: 10px; white-space: nowrap; letter-spacing: 0.5px; z-index: 461; pointer-events: none; }
 
+  /* V2.15：全螢幕看圖 */
+  .merch-tool-row { padding-top: 0; }
+  .app-grid-shell.fs-mode .header-bar, .app-grid-shell.fs-mode .merch-hint, .app-grid-shell.fs-mode .footer-controls-area, .app-grid-shell.fs-mode .album-tool-row { display: none !important; }
+  .app-grid-shell.fs-mode .stage-center-area { position: fixed; inset: 0; z-index: 2500; background: #111; padding: 52px 64px 76px; }
+  .app-grid-shell.fs-mode .stage-top-indicator { color: #fff; top: 16px; }
+  .app-grid-shell.fs-mode .merch-image-box { background: transparent; box-shadow: none; border: none; padding: 0; }
+  .app-grid-shell.fs-mode .merch-layout-wrapper { max-width: 94vw; align-items: center; }
+  .app-grid-shell.fs-mode .merch-img-wrapper, .app-grid-shell.fs-mode .merch-img-wrapper img { max-height: 80vh; }
+  .app-grid-shell.fs-mode .nav-btn-floating { background: rgba(255,255,255,0.88); }
+  .fs-close { position: fixed; top: 10px; left: 12px; z-index: 2600; width: 40px; height: 40px; border-radius: 50%; border: none; background: rgba(255,255,255,0.15); color: #fff; font-size: 1.2rem; cursor: pointer; transition: opacity 0.3s; }
+  .fs-bottom { position: fixed; left: 50%; bottom: max(14px, env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 2600; display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; width: max-content; max-width: 96vw; transition: opacity 0.3s; }
+  .fs-chip { background: rgba(255,255,255,0.15); color: #fff; border: 1px solid rgba(255,255,255,0.35); border-radius: 20px; padding: 8px 16px; font-size: 0.85rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .fs-chip:hover { background: rgba(255,255,255,0.28); }
+  .app-grid-shell.fs-ui-hidden .fs-close, .app-grid-shell.fs-ui-hidden .fs-bottom { opacity: 0; pointer-events: none; }
+  @media (max-width: 768px) {
+    .app-grid-shell.fs-mode .stage-center-area { padding: 48px 8px 70px; }
+    .fs-chip { padding: 7px 12px; font-size: 0.78rem; }
+  }
+
   /* V2.6：周邊商品提醒 */
   .tab-btn { position: relative; }
   .tab-btn .more-badge { top: -7px; right: -7px; }
@@ -428,6 +447,10 @@ function AppInner() {
   const [isAlbumRotated, setIsAlbumRotated] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [merchVisited, setMerchVisited] = useState(false);
+  // V2.15：全螢幕看圖（同精修校稿）
+  const [fs, setFs] = useState(false);
+  const [fsUi, setFsUi] = useState(true);
+  const fsNativeRef = useRef(false);
   // V2.3：周邊原始尺寸備援（Apps Script 未回傳 w/h 時，以載入後的圖片尺寸估算）
   const [merchDims, setMerchDims] = useState<Record<string, { w: number; h: number }>>({});
   const submitRefRef = useRef<{ type: string; ref: string } | null>(null);
@@ -466,6 +489,24 @@ function AppInner() {
   }, [allFeedbacks, folderId]);
 
   useEffect(() => { if (currentView === 'merch') setMerchVisited(true); }, [currentView]);
+
+  // V2.15：全螢幕 — 返回鍵／Esc／系統退出全螢幕時同步關閉；按鈕 3 秒沒操作自動隱藏
+  useEffect(() => {
+    if (!fs) return;
+    const onPop = () => closeFs();
+    const onFsChange = () => {
+      if (!document.fullscreenElement && fsNativeRef.current) exitFs();
+      fsNativeRef.current = !!document.fullscreenElement;
+    };
+    window.addEventListener('popstate', onPop);
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => { window.removeEventListener('popstate', onPop); document.removeEventListener('fullscreenchange', onFsChange); };
+  }, [fs]);
+  useEffect(() => {
+    if (!fs || !fsUi) return;
+    const t = setTimeout(() => setFsUi(false), 3000);
+    return () => clearTimeout(t);
+  }, [fs, fsUi, albumSpreadIndex, merchIndex, currentView]);
 
   // 🛡️ V2.6：關閉瀏覽器自動翻譯。Chrome 翻譯會改寫畫面文字（週邊／相簿／裁線），
   //    並在切換按鈕文字時造成 React 當掉（畫面全黑），旋轉時特別容易發生。
@@ -730,12 +771,24 @@ function AppInner() {
     if (e.touches.length !== 1) { touchStartRef.current = null; return; }
     touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
   };
+  // V2.15：周邊也可左右滑動換張；全螢幕往下滑離開
+  const handleMerchTouchEnd = (e: React.TouchEvent) => {
+    const start = touchStartRef.current;
+    touchStartRef.current = null;
+    if (!start || !gatePassed) return;
+    const dx = e.changedTouches[0].clientX - start.x;
+    const dy = e.changedTouches[0].clientY - start.y;
+    if (fs && dy > 90 && dy > Math.abs(dx) * 1.5) { exitFs(); return; }
+    if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy)) return;
+    if (dx < 0) goNextGlobal(); else goPrevMerch();
+  };
   const handleAlbumTouchEnd = (e: React.TouchEvent) => {
     const start = touchStartRef.current;
     touchStartRef.current = null;
     if (!start || !gatePassed || flipState) return;
     const dx = e.changedTouches[0].clientX - start.x;
     const dy = e.changedTouches[0].clientY - start.y;
+    if (fs && !isAlbumRotated && dy > 90 && dy > Math.abs(dx) * 1.5) { exitFs(); return; }
     const main = isAlbumRotated ? dy : dx;
     const cross = isAlbumRotated ? dx : dy;
     if (Math.abs(main) < 50 || Math.abs(main) < Math.abs(cross)) return;
@@ -1022,8 +1075,29 @@ function AppInner() {
     );
   };
 
+  // ⛶ 全螢幕：Android／電腦用瀏覽器全螢幕；iPhone 不支援則以滿版黑底呈現（效果相同）
+  const closeFs = () => {
+    setFs(false);
+    try { if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {}); } catch { /* ignore */ }
+  };
+  const enterFs = () => {
+    setFs(true);
+    setFsUi(true);
+    try { const el: any = document.documentElement; if (el.requestFullscreen) el.requestFullscreen().catch(() => {}); } catch { /* ignore */ }
+    // 手機「返回」→ 只關閉全螢幕，不會離開網頁
+    try { window.history.pushState({ afs: 1 }, ''); } catch { /* ignore */ }
+  };
+  const exitFs = () => {
+    try { if (window.history.state && window.history.state.afs) { window.history.back(); return; } } catch { /* ignore */ }
+    closeFs();
+  };
+  const fsButton = (
+    <button className="crop-toggle-btn-inline" onClick={enterFs} title="全螢幕看作品">⛶ 全螢幕</button>
+  );
+
   const renderAlbumTools = () => gatePassed ? (
     <div className="album-tool-row">
+      {fsButton}
       <button
         className="crop-toggle-btn-inline"
         style={isAlbumRotated ? { background: '#187880', color: '#fff' } : undefined}
@@ -1035,7 +1109,7 @@ function AppInner() {
       <button
         className={`crop-toggle-btn-inline ${showAlbumCropLines ? 'active' : ''}`}
         onClick={() => setShowAlbumCropLines(!showAlbumCropLines)}
-        title="模擬印刷廠的安全裁切範圍"
+        title="同時顯示／隱藏裁切線與中央翻折線"
       >
         {showAlbumCropLines ? '👁️ 隱藏裁切線' : '✂️ 顯示裁切線'}
       </button>
@@ -1090,7 +1164,22 @@ function AppInner() {
   return (
     <React.Fragment>
       <style>{GLOBAL_STYLES}</style>
-      <div className="app-grid-shell" ref={albumRef} tabIndex={0} style={{ outline: 'none' }}>
+      <div className={`app-grid-shell ${fs ? 'fs-mode' : ''} ${fs && !fsUi ? 'fs-ui-hidden' : ''}`} ref={albumRef} tabIndex={0} style={{ outline: 'none' }}
+        onClick={(e) => { if (fs && !(e.target as HTMLElement).closest('button')) setFsUi(v => !v); }}>
+        {fs && (
+          <>
+            <button className="fs-close" onClick={exitFs} aria-label="結束全螢幕">✕</button>
+            <div className="fs-bottom">
+              {currentView === 'album' && (
+                <button className="fs-chip" onClick={() => setIsAlbumRotated(r => !r)}>{isAlbumRotated ? '↩️ 恢復原方向' : '🔄 旋轉相冊'}</button>
+              )}
+              <button className="fs-chip" onClick={() => currentView === 'album' ? setShowAlbumCropLines(v => !v) : setShowMerchCropLines(v => !v)}>
+                {(currentView === 'album' ? showAlbumCropLines : showMerchCropLines) ? '👁️ 隱藏裁切線' : '✂️ 顯示裁切線'}
+              </button>
+              <button className="fs-chip" onClick={exitFs}>✕ 結束全螢幕</button>
+            </div>
+          </>
+        )}
 
         <header className="header-bar">
           <div className="brand-logo-text-small">辰妍國際</div>
@@ -1129,7 +1218,7 @@ function AppInner() {
         {currentView === 'album' && albumPhotos.length > 0 && (() => {
           // V2.1：旋轉時書本寬度 W 變成螢幕上的高度
           const ratio = dynamicAspectRatio || 2;
-          const rotatedW = `min(66vh, ${(88 * ratio).toFixed(2)}vw)`;
+          const rotatedW = fs ? `min(84vh, ${(94 * ratio).toFixed(2)}vw)` : `min(66vh, ${(88 * ratio).toFixed(2)}vw)`;
           const goPrev = () => handlePageChange(Math.max(0, albumSpreadIndex - 1));
           const goNext = goNextGlobal;
           const bookInner = (
@@ -1154,7 +1243,7 @@ function AppInner() {
                 )}
 
                 {/* V2.8：中央翻折線（僅提示翻折位置，印刷不會出現） */}
-                {gatePassed && !flipState && !isCurrentViewSingle && (
+                {gatePassed && showAlbumCropLines && !flipState && !isCurrentViewSingle && (
                   <>
                     <div className="fold-line" />
                     <div className="fold-label">翻折線・印刷不會出現</div>
@@ -1198,7 +1287,7 @@ function AppInner() {
                 {renderAlbumTools()}
               </div>
             ) : (
-              <div className="album-layout-wrapper" style={{ maxWidth: `calc(55vh * ${dynamicAspectRatio})` }} onTouchStart={handleAlbumTouchStart} onTouchEnd={handleAlbumTouchEnd}>
+              <div className="album-layout-wrapper" style={{ maxWidth: `calc(${fs ? 78 : 55}vh * ${dynamicAspectRatio})`, ...(fs ? { width: '94vw' } : {}) }} onTouchStart={handleAlbumTouchStart} onTouchEnd={handleAlbumTouchEnd}>
                 <div
                   className={containerClasses}
                   style={{ aspectRatio: dynamicAspectRatio, transform: containerTransform }}
@@ -1236,13 +1325,13 @@ function AppInner() {
               &#10094;
             </button>
 
-            <div className="merch-layout-wrapper">
+            <div className="merch-layout-wrapper" onTouchStart={handleAlbumTouchStart} onTouchEnd={handleMerchTouchEnd}>
               <div className="merch-image-box">
                 {(() => {
                   const mp = merchPhotos[merchIndex];
                   const trim = getMerchTrim(mp);
                   if (trim && !trim.silk) {
-                    const maxH = typeof window !== 'undefined' && window.innerWidth <= 768 ? 50 : 55;
+                    const maxH = fs ? 80 : (typeof window !== 'undefined' && window.innerWidth <= 768 ? 50 : 55);
                     return (
                       <div
                         className="merch-img-wrapper"
@@ -1297,13 +1386,16 @@ function AppInner() {
               </div>
 
               {gatePassed && (
-                <button
-                  className={`crop-toggle-btn-inline ${showMerchCropLines ? 'active' : ''}`}
-                  onClick={() => setShowMerchCropLines(!showMerchCropLines)}
-                  title="模擬印刷廠的安全裁切範圍"
-                >
-                  {showMerchCropLines ? '👁️ 隱藏裁切線' : '✂️ 顯示裁切線'}
-                </button>
+                <div className="album-tool-row merch-tool-row">
+                  {fsButton}
+                  <button
+                    className={`crop-toggle-btn-inline ${showMerchCropLines ? 'active' : ''}`}
+                    onClick={() => setShowMerchCropLines(!showMerchCropLines)}
+                    title="模擬印刷廠的安全裁切範圍"
+                  >
+                    {showMerchCropLines ? '👁️ 隱藏裁切線' : '✂️ 顯示裁切線'}
+                  </button>
+                </div>
               )}
             </div>
 
