@@ -94,7 +94,8 @@ const GLOBAL_STYLES = `
   .btn-reset { padding: 14px; background: transparent; color: #666; border: 1px solid #ccc; border-radius: 6px; font-weight: 600; cursor: pointer; transition: 0.2s; font-size: 0.95rem; letter-spacing: 1px; white-space: nowrap; }
   .btn-reset:hover { color: #187880; border-color: #187880; background: rgba(24, 120, 128, 0.05); }
   .btn-reset:disabled { opacity: 0.4; cursor: not-allowed; }
-  .link-help { margin-top: 10px; background: #F4F7F6; border-left: 3px solid #187880; border-radius: 4px; padding: 10px 12px; font-size: 0.8rem; color: #555; line-height: 1.7; text-align: left; }
+  .link-help { margin-top: 10px; background: #F4F7F6; border-left: 3px solid #187880; border-radius: 4px; padding: 10px 12px; font-size: 0.85rem; color: #555; line-height: 1.6; text-align: left; }
+  .link-help-target { color: #fff; background: #187880; padding: 1px 8px; border-radius: 10px; font-weight: 700; }
   .link-help code { background: #fff; border: 1px solid #ddd; border-radius: 3px; padding: 0 4px; font-size: 0.78rem; }
   .link-error { margin-top: 8px; color: #c0392b; font-size: 0.85rem; font-weight: 600; text-align: left; }
 
@@ -877,7 +878,7 @@ function AppInner() {
 
             <form onSubmit={handleGenerateLink}>
               <div className="input-group">
-                <label className="input-label">請貼上「本次校稿資料夾」的雲端硬碟網址：</label>
+                <label className="input-label">請貼上「04 設計部」資料夾的連結：</label>
                 <input
                   className="drive-input"
                   value={folderLink}
@@ -885,11 +886,7 @@ function AppInner() {
                   placeholder="https://drive.google.com/drive/folders/..."
                 />
                 <div className="link-help">
-                  <b>要貼哪一個連結？</b><br />
-                  ① 在雲端硬碟點進該案「這一次要給客人校稿」的資料夾（裡面直接放相冊跨頁與周邊 JPG）<br />
-                  ② 複製瀏覽器上方網址列的網址（含 <code>/folders/</code>）貼到上方<br />
-                  ③ 案號會自動使用資料夾名稱，請先把資料夾命名好（例：羅郁婷-相冊三校）<br />
-                  <span style={{ color: '#c0392b' }}>※ 不要貼單張照片的連結，也不要貼上一層的總資料夾。</span>
+                  📁 客戶名稱 › <b className="link-help-target">04 設計部</b>　← 複製這個資料夾的網址
                 </div>
                 {linkError && <div className="link-error">⚠️ {linkError}</div>}
               </div>
