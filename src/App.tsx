@@ -27,6 +27,8 @@ const CROP_OUT = "-7px";
 // ==========================================
 const MERCH_DPI = 300; // 印刷檔解析度（mm → 像素換算用）
 const MERCH_SILK = /蠶絲/;
+const MERCH_SWAP_FRAME = /換照框/;
+const SWAP_FRAME_CROP_MM = 2; // V2.14：換照框＝左右兩框，各自內縮 2mm
 const SILK_CROP_MM = 4; // V2.11：蠶絲膜（含「蠶絲」簡寫）不論尺寸，照原樣顯示，裁切線＝圖檔邊緣往內 4mm
 type Mm4 = { top: number; bottom: number; left: number; right: number };
 const mmAll = (n: number): Mm4 => ({ top: n, bottom: n, left: n, right: n });
@@ -1046,11 +1048,23 @@ function AppInner() {
     if (!dims) return null;
     const px = (mm: number) => (mm / 25.4) * MERCH_DPI;
     const pct = (v: number) => `${v * 100}%`;
+    // V2.14：換照框 → 整張照原樣顯示，左右兩半各一個裁切框，各自往內 SWAP_FRAME_CROP_MM
+    if (MERCH_SWAP_FRAME.test(normalizeMerchName(p.name || ""))) {
+      const cx = px(SWAP_FRAME_CROP_MM) / dims.w, cy = px(SWAP_FRAME_CROP_MM) / dims.h;
+      if (cx >= 0.2 || cy >= 0.4) return null;
+      return {
+        ruleName: "換照框", silk: true as const,
+        crops: [
+          { top: pct(cy), bottom: pct(cy), left: pct(cx), right: pct(0.5 + cx) },   // 左框
+          { top: pct(cy), bottom: pct(cy), left: pct(0.5 + cx), right: pct(cx) },   // 右框
+        ],
+      };
+    }
     // V2.11：蠶絲膜（任何尺寸）→ 整張照原樣顯示，裁切虛線一律在圖檔邊緣往內 SILK_CROP_MM
     if (MERCH_SILK.test(normalizeMerchName(p.name || ""))) {
       const cx = px(SILK_CROP_MM) / dims.w, cy = px(SILK_CROP_MM) / dims.h;
       if (cx >= 0.4 || cy >= 0.4) return null;
-      return { ruleName: "蠶絲膜", silk: true as const, crop: { top: pct(cy), bottom: pct(cy), left: pct(cx), right: pct(cx) } };
+      return { ruleName: "蠶絲膜", silk: true as const, crops: [{ top: pct(cy), bottom: pct(cy), left: pct(cx), right: pct(cx) }] };
     }
     const rule = getMerchTrimRule(p.name || "", dims);
     if (!rule) return null;
@@ -1260,14 +1274,14 @@ function AppInner() {
                         onLoad={(e) => {
                           const img = e.currentTarget;
                           // lh3 寬度上限 2400：剛好 2400 代表可能被縮圖，無法得知原尺寸 → 不裁（寧可多顯示）
-                          if (!mp.w && (getMerchTrimRule(mp.name || "") || MERCH_SILK.test(normalizeMerchName(mp.name || ""))) && !merchDims[mp.id] && img.naturalWidth && img.naturalWidth !== 2400) {
+                          if (!mp.w && (getMerchTrimRule(mp.name || "") || MERCH_SILK.test(normalizeMerchName(mp.name || "")) || MERCH_SWAP_FRAME.test(normalizeMerchName(mp.name || ""))) && !merchDims[mp.id] && img.naturalWidth && img.naturalWidth !== 2400) {
                             setMerchDims(d => ({ ...d, [mp.id]: { w: img.naturalWidth, h: img.naturalHeight } }));
                           }
                         }}
                       />
                       {gatePassed && showMerchCropLines && (trim && trim.silk ? (
                         <>
-                          <div className="crop-line-overlay outside" style={trim.crop} />
+                          {trim.crops.map((c, i) => <div key={i} className="crop-line-overlay outside" style={c} />)}
                           <div style={{ position: 'absolute', top: '-22px', right: 0, zIndex: 500, pointerEvents: 'none' }}>
                             <span className="crop-warning-text">✂️ 裁切線</span>
                           </div>
