@@ -21,28 +21,32 @@ const CROP_OUT = "-7px";
 // 🖼️ V2.7 周邊商品顯示規則（依《框類內縮尺寸表》，單位 mm）
 // 給客人的檔案＝給廠商的印刷檔；外圈是包邊用，顯示時往內裁掉（trim），
 // 讓客人看到「掛上牆後的樣子」；裁切虛線再從顯示範圍往內 crop mm。
-// 檔名含「蠶絲膜」→ 一律照原樣顯示（不裁）。由上往下比對，先符合者優先。
+// 檔名含「蠶絲膜／蠶絲」→ 照原樣顯示（不裁），但裁切虛線畫在「內縮＋裁切」的同一位置。
+// 由上往下比對，先符合者優先。
 // 比對前檔名會統一：去空白、轉小寫、× ＊ * → x
 // ==========================================
 const MERCH_DPI = 300; // 印刷檔解析度（mm → 像素換算用）
-const MERCH_SKIP = /蠶絲膜/;
+const MERCH_SILK = /蠶絲/; // 蠶絲膜（含「蠶絲」簡寫）：照原樣顯示，裁切線位置與無膜版相同
 type Mm4 = { top: number; bottom: number; left: number; right: number };
 const mmAll = (n: number): Mm4 => ({ top: n, bottom: n, left: n, right: n });
 const MERCH_TRIM_RULES: { name: string; match: RegExp; orient?: 'portrait' | 'landscape'; trimMm: Mm4; cropMm: number }[] = [
   // ——— 尺寸表（品名 → 上下左右內縮／裁切線）———
   { name: "40x60(四宮格)",            match: /40x60.*四宮格|四宮格/,              trimMm: mmAll(40), cropMm: 10 },
   { name: "40x60橫式",                match: /40x60橫式/,                        trimMm: mmAll(50), cropMm: 4 },
-  { name: "40x60直 16x24-51x71cm",    match: /40x60直|16x24直|51x71.*直/,        trimMm: { top: 40, bottom: 40, left: 42, right: 42 }, cropMm: 10 },
-  { name: "40x60橫 16x24-51x71cm",    match: /40x60橫|16x24橫|51x71.*橫/,        trimMm: { top: 42, bottom: 42, left: 40, right: 40 }, cropMm: 10 },
+  { name: "40x60直 16x24-51x71cm",    match: /40x60直|16x24.*直|51x71.*直/,        trimMm: { top: 40, bottom: 40, left: 42, right: 42 }, cropMm: 10 },
+  { name: "40x60橫 16x24-51x71cm",    match: /40x60橫|16x24.*橫|51x71.*橫/,        trimMm: { top: 42, bottom: 42, left: 40, right: 40 }, cropMm: 10 },
   { name: "55x55cm-65x65cm",          match: /55x55|65x65/,                      trimMm: mmAll(40), cropMm: 9 },
   { name: "60x90cm-70x100cm",         match: /60x90|70x100/,                     trimMm: mmAll(45), cropMm: 10 },
   { name: "30框",                     match: /(^|[^\d])30框/,                    trimMm: mmAll(50), cropMm: 4 },
   { name: "55框",                     match: /(^|[^\d])55框/,                    trimMm: mmAll(50), cropMm: 4 },
   { name: "A4框直",                   match: /a4框直|a4直框/,                    trimMm: mmAll(48), cropMm: 4 },
   { name: "A4框橫",                   match: /a4框橫|a4橫框/,                    trimMm: mmAll(52), cropMm: 4 },
+  { name: "4x6（不裁，裁切線內縮 4mm）",  match: /(^|[^\d])4x6(?!\d)/,               trimMm: mmAll(0),  cropMm: 4 },
   // ——— 檔名沒寫直／橫時，依照片方向自動判斷 ———
-  { name: "40x60（未標直橫）→ 直",     match: /40x60|16x24|51x71/, orient: 'portrait',  trimMm: { top: 40, bottom: 40, left: 42, right: 42 }, cropMm: 10 },
-  { name: "40x60（未標直橫）→ 橫",     match: /40x60|16x24|51x71/, orient: 'landscape', trimMm: { top: 42, bottom: 42, left: 40, right: 40 }, cropMm: 10 },
+  { name: "16x24（未標直橫）→ 直",     match: /16x24|51x71/, orient: 'portrait',  trimMm: { top: 40, bottom: 40, left: 42, right: 42 }, cropMm: 10 },
+  { name: "16x24（未標直橫）→ 橫",     match: /16x24|51x71/, orient: 'landscape', trimMm: { top: 42, bottom: 42, left: 40, right: 40 }, cropMm: 10 },
+  // V2.8：只寫「40x60」「40x60框」（標準款）→ 套 40x60橫式 版型
+  { name: "40x60（標準款）",          match: /40x60/,                            trimMm: mmAll(50), cropMm: 4 },
   { name: "A4框（未標直橫）→ 直",      match: /a4框/, orient: 'portrait',  trimMm: mmAll(48), cropMm: 4 },
   { name: "A4框（未標直橫）→ 橫",      match: /a4框/, orient: 'landscape', trimMm: mmAll(52), cropMm: 4 },
   // ——— 備援：表外的無框畫／數字框，沿用 48mm＋裁切線 4mm ———
@@ -53,7 +57,6 @@ const normalizeMerchName = (name: string) =>
 // dims 未知時（只想知道「是否可能套用規則」）方向條件視為符合
 const getMerchTrimRule = (name: string, dims?: { w: number; h: number }) => {
   const n = normalizeMerchName(name);
-  if (MERCH_SKIP.test(n)) return null;
   const orient = dims ? (dims.w >= dims.h ? 'landscape' : 'portrait') : null;
   return MERCH_TRIM_RULES.find(r => r.match.test(n) && (!r.orient || !orient || r.orient === orient)) || null;
 };
@@ -90,6 +93,10 @@ const GLOBAL_STYLES = `
   .btn-generate:disabled { background: #e0e0e0; color: #999; cursor: not-allowed; }
   .btn-reset { padding: 14px; background: transparent; color: #666; border: 1px solid #ccc; border-radius: 6px; font-weight: 600; cursor: pointer; transition: 0.2s; font-size: 0.95rem; letter-spacing: 1px; white-space: nowrap; }
   .btn-reset:hover { color: #187880; border-color: #187880; background: rgba(24, 120, 128, 0.05); }
+  .btn-reset:disabled { opacity: 0.4; cursor: not-allowed; }
+  .link-help { margin-top: 10px; background: #F4F7F6; border-left: 3px solid #187880; border-radius: 4px; padding: 10px 12px; font-size: 0.8rem; color: #555; line-height: 1.7; text-align: left; }
+  .link-help code { background: #fff; border: 1px solid #ddd; border-radius: 3px; padding: 0 4px; font-size: 0.78rem; }
+  .link-error { margin-top: 8px; color: #c0392b; font-size: 0.85rem; font-weight: 600; text-align: left; }
 
   .result-box { margin-top: 25px; padding: 20px; background: #F9FAFB; border: 1px solid #E5E9EA; border-left: 4px solid #187880; border-radius: 6px; animation: fadeIn 0.4s ease-out; }
   @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
@@ -127,6 +134,10 @@ const GLOBAL_STYLES = `
   .tab-btn { background: #ffffff; border: 1px solid #ddd; color: #666; padding: 8px 20px; border-radius: 20px; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
   .tab-btn:hover { border-color: #187880; color: #187880; }
   .tab-btn.active { background: rgba(24, 120, 128, 0.08); border-color: #187880; color: #187880; }
+  /* V2.8：相冊中央翻折線 */
+  .fold-line { position: absolute; top: 0; bottom: 0; left: 50%; width: 0; border-left: 2px dashed rgba(24, 120, 128, 0.85); transform: translateX(-1px); z-index: 460; pointer-events: none; }
+  .fold-label { position: absolute; left: 50%; bottom: 6px; transform: translateX(-50%); background: rgba(24, 120, 128, 0.9); color: #fff; font-size: 0.62rem; padding: 2px 7px; border-radius: 10px; white-space: nowrap; letter-spacing: 0.5px; z-index: 461; pointer-events: none; }
+
   /* V2.6：周邊商品提醒 */
   .tab-btn { position: relative; }
   .tab-btn .more-badge { top: -7px; right: -7px; }
@@ -386,8 +397,8 @@ const safeStorage = {
 
 function AppInner() {
   const [appMode, setAppMode] = useState<'admin' | 'viewer'>('admin');
-  const [displayName, setDisplayName] = useState("");
   const [folderLink, setFolderLink] = useState("");
+  const [linkError, setLinkError] = useState("");
   const [generatedLink, setGeneratedLink] = useState("");
   const [isCopied, setIsCopied] = useState(false);
   const [currentView, setCurrentView] = useState<'album' | 'merch'>('album');
@@ -432,6 +443,13 @@ function AppInner() {
       setAlbumName(nameFromUrl || "校稿預覽");
       setFolderId(idFromUrl);
       fetchPhotos(idFromUrl);
+      // V2.8：新連結不帶案號 → 以雲端資料夾名稱為案號（舊連結仍沿用網址上的 name）
+      if (!nameFromUrl) {
+        fetch(`${API_URL}?info=${encodeURIComponent(idFromUrl)}`)
+          .then(r => r.json())
+          .then(j => { if (j && j.name) setAlbumName(j.name); })
+          .catch(() => { /* 取不到就維持「校稿預覽」 */ });
+      }
     } else {
       setAppMode('admin');
     }
@@ -480,17 +498,28 @@ function AppInner() {
 
   const handleGenerateLink = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!displayName.trim() || !folderLink.trim()) return;
-
+    if (!folderLink.trim()) return;
+    setLinkError("");
+    // V2.8：防呆 — 貼到單一照片連結時提醒改貼資料夾
+    if (/\/file\/d\//.test(folderLink)) {
+      setLinkError("這是「單一照片」的連結，請改貼「資料夾」的網址（網址中會有 /folders/）。");
+      setGeneratedLink("");
+      return;
+    }
     const targetId = extractIdFromLink(folderLink);
-    // V2：加上 openExternalBrowser=1，客人從 LINE 點開會改用手機預設瀏覽器（剪貼簿、跳轉更穩定）
-    const directLink = `${window.location.origin}${window.location.pathname}?name=${encodeURIComponent(displayName.trim())}&id=${targetId}&openExternalBrowser=1`;
+    if (!/^[A-Za-z0-9_-]{10,}$/.test(targetId)) {
+      setLinkError("看起來不是 Google 雲端硬碟資料夾的網址，請重新複製後貼上。");
+      setGeneratedLink("");
+      return;
+    }
+    // 案號自動使用雲端資料夾名稱；openExternalBrowser=1 讓 LINE 點開時改用手機預設瀏覽器
+    const directLink = `${window.location.origin}${window.location.pathname}?id=${targetId}&openExternalBrowser=1`;
     setGeneratedLink(directLink);
     setIsCopied(false);
   };
 
   const handleResetForm = () => {
-    setDisplayName("");
+    setLinkError("");
     setFolderLink("");
     setGeneratedLink("");
     setIsCopied(false);
@@ -555,8 +584,10 @@ function AppInner() {
       const filteredMerch: Photo[] = [];
 
       rawData.forEach(file => {
-        const n = file.name.toLowerCase();
-        const isMerch = /框|畫|卡|海報|桌曆|周邊|簽名|小物|相紙|10x10|8x8/.test(n);
+        const n = normalizeMerchName(file.name);
+        // V2.9：相冊公版檔名一律含「相冊」，封面／封底含「封面」「封底」→ 歸相冊；其餘符合周邊條件者歸周邊
+        const albumGuard = /相冊|相本|跨頁|封面|封底/.test(n);
+        const isMerch = !albumGuard && (/框|畫|卡|海報|桌曆|周邊|簽名|小物|相紙|蠶絲|\d+x\d+/.test(n) || !!getMerchTrimRule(n));
         const isAlbumCover = (n.includes("封面") || n.includes("封底")) && !isMerch;
 
         if (isMerch && !isAlbumCover) {
@@ -846,30 +877,29 @@ function AppInner() {
 
             <form onSubmit={handleGenerateLink}>
               <div className="input-group">
-                <label className="input-label">1. 設定對外顯示的案號名稱：</label>
-                <input
-                  className="drive-input"
-                  value={displayName}
-                  onChange={e => setDisplayName(e.target.value)}
-                  placeholder="例如：羅郁婷-相冊三校"
-                />
-              </div>
-              <div className="input-group">
-                <label className="input-label">2. 請貼上「校稿資料夾」的雲端硬碟網址：</label>
+                <label className="input-label">請貼上「本次校稿資料夾」的雲端硬碟網址：</label>
                 <input
                   className="drive-input"
                   value={folderLink}
-                  onChange={e => setFolderLink(e.target.value)}
-                  placeholder="請貼上該特定版本資料夾的連結..."
+                  onChange={e => { setFolderLink(e.target.value); setLinkError(""); }}
+                  placeholder="https://drive.google.com/drive/folders/..."
                 />
+                <div className="link-help">
+                  <b>要貼哪一個連結？</b><br />
+                  ① 在雲端硬碟點進該案「這一次要給客人校稿」的資料夾（裡面直接放相冊跨頁與周邊 JPG）<br />
+                  ② 複製瀏覽器上方網址列的網址（含 <code>/folders/</code>）貼到上方<br />
+                  ③ 案號會自動使用資料夾名稱，請先把資料夾命名好（例：羅郁婷-相冊三校）<br />
+                  <span style={{ color: '#c0392b' }}>※ 不要貼單張照片的連結，也不要貼上一層的總資料夾。</span>
+                </div>
+                {linkError && <div className="link-error">⚠️ {linkError}</div>}
               </div>
 
               <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                <button className="btn-reset" type="button" onClick={handleResetForm}>
-                  清除重填
+                <button className="btn-generate" type="submit" disabled={!folderLink.trim()} style={{ margin: 0, flex: 3 }}>
+                  產生專屬校稿連結
                 </button>
-                <button className="btn-generate" type="submit" disabled={!displayName.trim() || !folderLink.trim()} style={{ margin: 0, flex: 1 }}>
-                  產生精準專屬連結
+                <button className="btn-reset" type="button" onClick={handleResetForm} disabled={!folderLink && !generatedLink} style={{ flex: 1 }}>
+                  🧹 清除
                 </button>
               </div>
             </form>
@@ -1019,7 +1049,17 @@ function AppInner() {
     const rule = getMerchTrimRule(p.name || "", dims);
     if (!rule) return null;
     const px = (mm: number) => (mm / 25.4) * MERCH_DPI;
-    const t = rule.trimMm;
+    const t = rule.trimMm, c = rule.cropMm;
+    const pct = (v: number) => `${v * 100}%`;
+    // 蠶絲膜：整張照原樣顯示，虛線在（包邊內縮＋裁切）處，與無膜版位置一致
+    if (MERCH_SILK.test(normalizeMerchName(p.name || ""))) {
+      const crop = {
+        top: pct(px(t.top + c) / dims.h), bottom: pct(px(t.bottom + c) / dims.h),
+        left: pct(px(t.left + c) / dims.w), right: pct(px(t.right + c) / dims.w),
+      };
+      if (parseFloat(crop.left) + parseFloat(crop.right) >= 80 || parseFloat(crop.top) + parseFloat(crop.bottom) >= 80) return null;
+      return { ruleName: rule.name, silk: true as const, crop };
+    }
     const fl = px(t.left) / dims.w, fr = px(t.right) / dims.w;
     const ft = px(t.top) / dims.h, fb = px(t.bottom) / dims.h;
     const keepW = 1 - fl - fr, keepH = 1 - ft - fb;
@@ -1027,12 +1067,12 @@ function AppInner() {
     const shownW = dims.w * keepW, shownH = dims.h * keepH;
     return {
       ruleName: rule.name,
+      silk: false as const,
       ratio: shownW / shownH,
       bgSize: `${100 / keepW}% ${100 / keepH}%`,
       bgPos: `${fl + fr > 0 ? (fl / (fl + fr)) * 100 : 50}% ${ft + fb > 0 ? (ft / (ft + fb)) * 100 : 50}%`,
       // 裁切虛線：在顯示範圍內再往內 cropMm
-      cropX: `${(px(rule.cropMm) / shownW) * 100}%`,
-      cropY: `${(px(rule.cropMm) / shownH) * 100}%`,
+      crop: { top: pct(px(c) / shownH), bottom: pct(px(c) / shownH), left: pct(px(c) / shownW), right: pct(px(c) / shownW) },
     };
   };
 
@@ -1104,6 +1144,13 @@ function AppInner() {
                   </div>
                 )}
 
+                {/* V2.8：中央翻折線（僅提示翻折位置，印刷不會出現） */}
+                {gatePassed && !flipState && !isCurrentViewSingle && (
+                  <>
+                    <div className="fold-line" />
+                    <div className="fold-label">翻折線・印刷不會出現</div>
+                  </>
+                )}
                 {gatePassed && showAlbumCropLines && (
                   <>
                     {/* V2.5：虛線維持原版內縮位置；標籤改新版「✂️ 裁切線」並放在作品外，不遮擋畫面 */}
@@ -1185,7 +1232,7 @@ function AppInner() {
                 {(() => {
                   const mp = merchPhotos[merchIndex];
                   const trim = getMerchTrim(mp);
-                  if (trim) {
+                  if (trim && !trim.silk) {
                     const maxH = typeof window !== 'undefined' && window.innerWidth <= 768 ? 50 : 55;
                     return (
                       <div
@@ -1200,7 +1247,7 @@ function AppInner() {
                       >
                         {gatePassed && showMerchCropLines && (
                           <>
-                            <div className="crop-line-overlay outside" style={{ top: trim.cropY, bottom: trim.cropY, left: trim.cropX, right: trim.cropX }} />
+                            <div className="crop-line-overlay outside" style={trim.crop} />
                             <div style={{ position: 'absolute', top: '-22px', right: 0, zIndex: 500, pointerEvents: 'none' }}>
                               <span className="crop-warning-text">✂️ 裁切線</span>
                             </div>
@@ -1223,11 +1270,18 @@ function AppInner() {
                           }
                         }}
                       />
-                      {gatePassed && showMerchCropLines && (
-                      <div className={`crop-line-overlay ${CROP_LINE_OUTSIDE ? 'outside' : ''}`} style={CROP_LINE_OUTSIDE ? { top: CROP_OUT, bottom: CROP_OUT, left: CROP_OUT, right: CROP_OUT } : { top: MERCH_CROP_PERCENT, bottom: MERCH_CROP_PERCENT, left: MERCH_CROP_PERCENT, right: MERCH_CROP_PERCENT }}>
-                        <span className="crop-warning-text">✂️ 裁切線</span>
-                      </div>
-                    )}
+                      {gatePassed && showMerchCropLines && (trim && trim.silk ? (
+                        <>
+                          <div className="crop-line-overlay outside" style={trim.crop} />
+                          <div style={{ position: 'absolute', top: '-22px', right: 0, zIndex: 500, pointerEvents: 'none' }}>
+                            <span className="crop-warning-text">✂️ 裁切線</span>
+                          </div>
+                        </>
+                      ) : (
+                        <div className={`crop-line-overlay ${CROP_LINE_OUTSIDE ? 'outside' : ''}`} style={CROP_LINE_OUTSIDE ? { top: CROP_OUT, bottom: CROP_OUT, left: CROP_OUT, right: CROP_OUT } : { top: MERCH_CROP_PERCENT, bottom: MERCH_CROP_PERCENT, left: MERCH_CROP_PERCENT, right: MERCH_CROP_PERCENT }}>
+                          <span className="crop-warning-text">✂️ 裁切線</span>
+                        </div>
+                      ))}
                     </div>
                   );
                 })()}
@@ -1275,7 +1329,7 @@ function AppInner() {
                   onBlur={triggerSaveIndicator}
                 />
                 <div className="shadow-disclaimer-text">
-                  * 畫面中央深色陰影為 3D 模擬效果，實體印刷為全景無縫平翻，並無此陰影。
+                  * 中央綠色虛線為翻折位置提示、深色陰影為 3D 模擬效果，實體印刷皆不會出現。
                 </div>
               </div>
             </div>
