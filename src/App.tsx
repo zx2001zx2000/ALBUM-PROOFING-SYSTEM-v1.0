@@ -142,6 +142,40 @@ const GLOBAL_STYLES = `
   .fold-line { position: absolute; top: 0; bottom: 0; left: 50%; width: 0; border-left: 2px dashed rgba(24, 120, 128, 0.85); transform: translateX(-1px); z-index: 460; pointer-events: none; }
   .fold-label { position: absolute; left: 50%; top: calc(100% + 8px); bottom: auto; transform: translateX(-50%); line-height: 1.4; background: rgba(24, 120, 128, 0.9); color: #fff; font-size: 0.62rem; padding: 2px 7px; border-radius: 10px; white-space: nowrap; letter-spacing: 0.5px; z-index: 461; pointer-events: none; }
 
+  /* V2.16：頁面總覽 */
+  .overview-btn { margin-right: 10px; padding: 8px 18px; background: #fff; color: #187880; border: 1px solid #187880; border-radius: 20px; cursor: pointer; font-size: 0.9rem; font-weight: 600; }
+  .overview-btn:hover { background: rgba(24,120,128,0.08); }
+  .header-actions { display: flex; align-items: center; gap: 8px; }
+  .overview-head-btn { padding: 6px 14px; }
+  .overview-box { position: relative; background: #fff; border-top: 5px solid #187880; border-radius: 12px; width: 100%; max-width: 1040px; max-height: 88vh; display: flex; flex-direction: column; padding: 20px 22px; box-shadow: 0 25px 60px rgba(0,0,0,0.25); }
+  .ov-head { display: flex; justify-content: space-between; align-items: center; }
+  .ov-tip { color: #888; font-size: 0.8rem; margin: 4px 0 10px; }
+  .ov-filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  .ov-scroll { overflow-y: auto; flex: 1; min-height: 0; padding-right: 4px; }
+  .ov-group-title { color: #187880; font-weight: 700; font-size: 0.95rem; margin: 10px 0 8px; }
+  .ov-grid { display: grid; gap: 12px; }
+  .ov-album { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+  .ov-merch { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+  .ov-card { min-width: 0; background: #fff; border: 2px solid transparent; border-radius: 8px; padding: 4px; cursor: pointer; text-align: center; transition: 0.15s; }
+  .ov-card:hover { border-color: rgba(24,120,128,0.4); }
+  .ov-card.current { border-color: #187880; background: rgba(24,120,128,0.06); }
+  .ov-thumb { position: relative; width: 100%; background: #f1f3f3; border-radius: 4px; overflow: hidden; }
+  .ov-merch .ov-thumb { aspect-ratio: 1; }
+  .ov-thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .ov-badge { position: absolute; font-size: 0.65rem; font-weight: 700; padding: 2px 6px; border-radius: 8px; color: #fff; }
+  .ov-badge.fb { top: 4px; left: 4px; background: #e74c3c; }
+  .ov-badge.unseen { top: 4px; right: 4px; background: rgba(0,0,0,0.55); }
+  .ov-badge.cur { bottom: 4px; left: 4px; background: #187880; }
+  .ov-label { font-size: 0.78rem; color: #555; margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ov-empty { text-align: center; color: #888; padding: 40px 0; }
+  @media (max-width: 768px) {
+    .overview-box { padding: 16px 12px; max-height: 92vh; }
+    .ov-album { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .ov-merch { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .overview-btn { padding: 8px 12px; font-size: 0.82rem; margin-right: 6px; }
+    .overview-head-btn { display: none; }
+  }
+
   /* V2.15：全螢幕看圖 */
   .merch-tool-row { padding-top: 0; }
   .app-grid-shell.fs-mode .header-bar, .app-grid-shell.fs-mode .merch-hint, .app-grid-shell.fs-mode .footer-controls-area, .app-grid-shell.fs-mode .album-tool-row { display: none !important; }
@@ -449,6 +483,10 @@ function AppInner() {
   const [merchVisited, setMerchVisited] = useState(false);
   // V2.15：全螢幕看圖（同精修校稿）
   const [fs, setFs] = useState(false);
+  // V2.16：頁面總覽＋已看紀錄（不必一頁頁翻）
+  const [showOverview, setShowOverview] = useState(false);
+  const [overviewFilter, setOverviewFilter] = useState<'all' | 'unseen' | 'feedback'>('all');
+  const [visited, setVisited] = useState<Record<string, boolean>>({});
   const [fsUi, setFsUi] = useState(true);
   const fsNativeRef = useRef(false);
   // V2.3：周邊原始尺寸備援（Apps Script 未回傳 w/h 時，以載入後的圖片尺寸估算）
@@ -733,7 +771,22 @@ function AppInner() {
   // 👑 V2.2：整份校稿（相冊 → 周邊）視為一條順序，看到最後一頁才可送出
   const totalItems = albumPhotos.length + merchPhotos.length;
   const currentPos = currentView === 'album' ? albumSpreadIndex : albumPhotos.length + merchIndex;
-  const remainingItems = Math.max(0, totalItems - 1 - currentPos);
+  // V2.16：改為「還沒看過的頁數」— 可從總覽直接跳頁，但每頁都要看過才能送出
+  const posKey = (view: 'album' | 'merch', idx: number) => `${view === 'album' ? 'a' : 'm'}${idx}`;
+  const allKeys = [...albumPhotos.map((_, i) => posKey('album', i)), ...merchPhotos.map((_, i) => posKey('merch', i))];
+  const unseenKeys = allKeys.filter(k => !visited[k]);
+  const remainingItems = unseenKeys.length;
+  const jumpTo = (view: 'album' | 'merch', idx: number) => {
+    if (flipState) return;
+    setCurrentView(view);
+    if (view === 'album') setAlbumSpreadIndex(idx); else setMerchIndex(idx);
+    setShowOverview(false);
+  };
+  const jumpToFirstUnseen = () => {
+    const k = unseenKeys[0];
+    if (!k) return;
+    jumpTo(k[0] === 'a' ? 'album' : 'merch', Number(k.slice(1)));
+  };
   const goNextGlobal = () => {
     if (currentView === 'album') {
       if (albumSpreadIndex < maxSpreads) handlePageChange(albumSpreadIndex + 1);
@@ -742,6 +795,21 @@ function AppInner() {
       setMerchIndex(prev => Math.min(merchPhotos.length - 1, prev + 1));
     }
   };
+  // 目前這頁標記為已看（記在本機，重新整理不會重算）
+  useEffect(() => {
+    if (!gatePassed || totalItems === 0) return;
+    const k = posKey(currentView, currentView === 'album' ? albumSpreadIndex : merchIndex);
+    setVisited(v => (v[k] ? v : { ...v, [k]: true }));
+  }, [gatePassed, currentView, albumSpreadIndex, merchIndex, totalItems]);
+  useEffect(() => {
+    if (!folderId) return;
+    try { const raw = localStorage.getItem(DRAFT_PREFIX + folderId + '_seen'); if (raw) setVisited(JSON.parse(raw) || {}); } catch { /* ignore */ }
+  }, [folderId]);
+  useEffect(() => {
+    if (!folderId || !Object.keys(visited).length) return;
+    safeStorage.set(DRAFT_PREFIX + folderId + '_seen', JSON.stringify(visited));
+  }, [visited, folderId]);
+
   const goPrevMerch = () => {
     if (merchIndex > 0) setMerchIndex(merchIndex - 1);
     else if (albumPhotos.length > 0) setCurrentView('album');
@@ -749,7 +817,7 @@ function AppInner() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (appMode === 'admin' || showFinalUI || !gatePassed) return;
+      if (appMode === 'admin' || showFinalUI || !gatePassed || showOverview) return;
       if (document.activeElement?.tagName === "TEXTAREA") return;
 
       if (currentView === 'album' && albumPhotos.length > 0) {
@@ -764,7 +832,7 @@ function AppInner() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [appMode, currentView, albumSpreadIndex, maxSpreads, flipState, albumPhotos.length, merchPhotos.length, showFinalUI, gatePassed, isAlbumRotated, merchIndex]);
+  }, [appMode, currentView, albumSpreadIndex, maxSpreads, flipState, albumPhotos.length, merchPhotos.length, showFinalUI, gatePassed, isAlbumRotated, merchIndex, showOverview]);
 
   // 📱 手勢翻頁：一般模式左右滑、旋轉模式上下滑（向上滑 = 下一頁）
   const handleAlbumTouchStart = (e: React.TouchEvent) => {
@@ -1176,6 +1244,7 @@ function AppInner() {
               <button className="fs-chip" onClick={() => currentView === 'album' ? setShowAlbumCropLines(v => !v) : setShowMerchCropLines(v => !v)}>
                 {(currentView === 'album' ? showAlbumCropLines : showMerchCropLines) ? '👁️ 隱藏裁切線' : '✂️ 顯示裁切線'}
               </button>
+              <button className="fs-chip" onClick={() => setShowOverview(true)}>📑 全部頁面</button>
               <button className="fs-chip" onClick={exitFs}>✕ 結束全螢幕</button>
             </div>
           </>
@@ -1203,6 +1272,7 @@ function AppInner() {
           )}
 
           <div className="header-actions">
+            <button className="tab-btn overview-head-btn" onClick={() => setShowOverview(true)}>📑 全部頁面</button>
             {/* V2：離開後不清除網址（客人重整即可回來，草稿仍在），也不會卡在「載入中」 */}
             <button className="logout-btn" onClick={() => { setAlbumPhotos([]); setMerchPhotos([]); setGatePassed(false); setShowFinalUI(false); setError("您已離開校稿頁面，填寫內容已暫存於此裝置，重新整理即可繼續。"); }}>離開</button>
           </div>
@@ -1460,10 +1530,13 @@ function AppInner() {
 
           <div className="navigation-bar">
              <div className={`page-remaining ${remainingItems === 0 ? 'last' : ''}`}>
-               {remainingItems > 0 ? `還有 ${remainingItems} 頁待確認` : '✓ 已看完全部內容'}
+               {remainingItems > 0 ? `還有 ${remainingItems} 頁未看` : '✓ 已看完全部內容'}
              </div>
+             <button className="overview-btn" onClick={() => setShowOverview(true)}>📑 全部頁面</button>
              {remainingItems > 0 ? (
-               <button className="finish-btn" onClick={goNextGlobal} disabled={!!flipState}>下一頁 ›</button>
+               currentPos < totalItems - 1
+                 ? <button className="finish-btn" onClick={goNextGlobal} disabled={!!flipState}>下一頁 ›</button>
+                 : <button className="finish-btn" onClick={jumpToFirstUnseen}>前往未看頁 ›</button>
              ) : (
                <button className="finish-btn" onClick={() => setShowFinalUI(true)}>完成並送出</button>
              )}
@@ -1504,6 +1577,69 @@ function AppInner() {
           </div>
         </div>
       )}
+
+      {/* V2.16：頁面總覽 — 點縮圖直接跳到該頁 */}
+      {showOverview && (() => {
+        const fbA = allFeedbacks['album'] || {}, fbM = allFeedbacks['merch'] || {};
+        const thumbOf = (p: Photo) => {
+          const u = p.url || '';
+          if (u.includes('lh3.googleusercontent.com')) return u.replace(/=w\d+$/, '=w480');
+          if (u.includes('drive.google.com/thumbnail')) return u.replace(/sz=w\d+/, 'sz=w480');
+          return u;
+        };
+        const items = [
+          ...albumPhotos.map((p, i) => ({ view: 'album' as const, i, p, label: getAlbumIndicatorLabel(i), hasFb: !!(fbA[p.id] || '').trim() })),
+          ...merchPhotos.map((p, i) => ({ view: 'merch' as const, i, p, label: p.name.replace(/\.[^.]+$/, ''), hasFb: !!(fbM[p.id] || '').trim() })),
+        ].filter(it => overviewFilter === 'all' ? true : overviewFilter === 'unseen' ? !visited[posKey(it.view, it.i)] : it.hasFb);
+        const fbCount = albumPhotos.filter(p => (fbA[p.id] || '').trim()).length + merchPhotos.filter(p => (fbM[p.id] || '').trim()).length;
+        const renderGroup = (view: 'album' | 'merch', title: string) => {
+          const list = items.filter(it => it.view === view);
+          if (!list.length) return null;
+          return (
+            <>
+              <div className="ov-group-title">{title}</div>
+              <div className={`ov-grid ${view === 'album' ? 'ov-album' : 'ov-merch'}`}>
+                {list.map(it => {
+                  const isCur = currentView === it.view && (it.view === 'album' ? albumSpreadIndex : merchIndex) === it.i;
+                  const seen = !!visited[posKey(it.view, it.i)];
+                  return (
+                    <button key={it.view + it.i} className={`ov-card ${isCur ? 'current' : ''}`} onClick={() => jumpTo(it.view, it.i)}>
+                      <div className="ov-thumb" style={view === 'album' ? { aspectRatio: dynamicAspectRatio || 2 } : undefined}>
+                        <img src={thumbOf(it.p)} alt="" loading="lazy" draggable={false} onError={(e) => { const el = e.currentTarget; if (el.src !== it.p.url) el.src = it.p.url; }} />
+                        {it.hasFb && <span className="ov-badge fb">✏️ 有修改</span>}
+                        {!seen && <span className="ov-badge unseen">未看</span>}
+                        {isCur && <span className="ov-badge cur">目前</span>}
+                      </div>
+                      <div className="ov-label">{it.label}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          );
+        };
+        return (
+          <div className="modal-overlay" onClick={() => setShowOverview(false)}>
+            <div className="overview-box" onClick={e => e.stopPropagation()}>
+              <div className="ov-head">
+                <h2 className="brand-title" style={{ fontSize: '1.3rem' }}>📑 全部頁面</h2>
+                <button className="close-modal-btn" style={{ position: 'static' }} onClick={() => setShowOverview(false)}>✕</button>
+              </div>
+              <p className="ov-tip">點選縮圖即可直接跳到該頁；每頁都看過後即可送出。</p>
+              <div className="ov-filters">
+                <button className={`tab-btn ${overviewFilter === 'all' ? 'active' : ''}`} onClick={() => setOverviewFilter('all')}>全部（{totalItems}）</button>
+                <button className={`tab-btn ${overviewFilter === 'unseen' ? 'active' : ''}`} onClick={() => setOverviewFilter('unseen')}>未看（{remainingItems}）</button>
+                <button className={`tab-btn ${overviewFilter === 'feedback' ? 'active' : ''}`} onClick={() => setOverviewFilter('feedback')}>有修改（{fbCount}）</button>
+              </div>
+              <div className="ov-scroll">
+                {renderGroup('album', `📖 相冊（${albumPhotos.length} 頁）`)}
+                {renderGroup('merch', `🖼️ 周邊商品（${merchPhotos.length} 件）`)}
+                {!items.length && <div className="ov-empty">{overviewFilter === 'unseen' ? '✓ 全部頁面都看過了' : '目前沒有填寫修改建議的頁面'}</div>}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {showFinalUI && (
         <div className="modal-overlay">
