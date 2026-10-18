@@ -176,6 +176,15 @@ const GLOBAL_STYLES = `
     .overview-head-btn { display: none; }
   }
 
+  /* V2.17：全部頁面提示 */
+  .ov-btn-wrap { position: relative; }
+  .ov-tip-bubble { position: absolute; bottom: calc(100% + 12px); right: 0; width: 250px; background: #187880; color: #fff; font-size: 0.8rem; line-height: 1.5; padding: 10px 28px 10px 12px; border-radius: 8px; box-shadow: 0 6px 18px rgba(0,0,0,0.18); cursor: pointer; z-index: 120; animation: fadeIn 0.4s ease-out; text-align: left; }
+  .ov-tip-bubble::after { content: ''; position: absolute; top: 100%; right: 40px; border: 7px solid transparent; border-top-color: #187880; }
+  .ov-tip-close { position: absolute; top: 4px; right: 6px; background: transparent; border: none; color: #fff; font-size: 0.85rem; cursor: pointer; opacity: 0.8; }
+  .overview-btn.pulse { animation: ovPulse 1.6s ease-in-out infinite; }
+  @keyframes ovPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(24,120,128,0.45); } 50% { box-shadow: 0 0 0 8px rgba(24,120,128,0); } }
+  @media (max-width: 768px) { .ov-tip-bubble { width: 220px; right: -60px; } .ov-tip-bubble::after { right: 100px; } }
+
   /* V2.15：全螢幕看圖 */
   .merch-tool-row { padding-top: 0; }
   .app-grid-shell.fs-mode .header-bar, .app-grid-shell.fs-mode .merch-hint, .app-grid-shell.fs-mode .footer-controls-area, .app-grid-shell.fs-mode .album-tool-row { display: none !important; }
@@ -485,7 +494,13 @@ function AppInner() {
   const [fs, setFs] = useState(false);
   // V2.16：頁面總覽＋已看紀錄（不必一頁頁翻）
   const [showOverview, setShowOverview] = useState(false);
-  const [overviewFilter, setOverviewFilter] = useState<'all' | 'unseen' | 'feedback'>('all');
+  const [overviewFilter, setOverviewFilter] = useState<'all' | 'unseen'>('all');
+  // V2.17：「全部頁面」新手提示（點過一次就不再出現）
+  const [ovTipDone, setOvTipDone] = useState(() => { try { return localStorage.getItem('album-ov-tip-done') === '1'; } catch { return false; } });
+  const openOverview = () => {
+    setShowOverview(true);
+    if (!ovTipDone) { setOvTipDone(true); safeStorage.set('album-ov-tip-done', '1'); }
+  };
   const [visited, setVisited] = useState<Record<string, boolean>>({});
   const [fsUi, setFsUi] = useState(true);
   const fsNativeRef = useRef(false);
@@ -1244,7 +1259,7 @@ function AppInner() {
               <button className="fs-chip" onClick={() => currentView === 'album' ? setShowAlbumCropLines(v => !v) : setShowMerchCropLines(v => !v)}>
                 {(currentView === 'album' ? showAlbumCropLines : showMerchCropLines) ? '👁️ 隱藏裁切線' : '✂️ 顯示裁切線'}
               </button>
-              <button className="fs-chip" onClick={() => setShowOverview(true)}>📑 全部頁面</button>
+              <button className="fs-chip" onClick={openOverview}>📑 全部頁面</button>
               <button className="fs-chip" onClick={exitFs}>✕ 結束全螢幕</button>
             </div>
           </>
@@ -1272,7 +1287,7 @@ function AppInner() {
           )}
 
           <div className="header-actions">
-            <button className="tab-btn overview-head-btn" onClick={() => setShowOverview(true)}>📑 全部頁面</button>
+            <button className="tab-btn overview-head-btn" onClick={openOverview}>📑 全部頁面</button>
             {/* V2：離開後不清除網址（客人重整即可回來，草稿仍在），也不會卡在「載入中」 */}
             <button className="logout-btn" onClick={() => { setAlbumPhotos([]); setMerchPhotos([]); setGatePassed(false); setShowFinalUI(false); setError("您已離開校稿頁面，填寫內容已暫存於此裝置，重新整理即可繼續。"); }}>離開</button>
           </div>
@@ -1532,7 +1547,15 @@ function AppInner() {
              <div className={`page-remaining ${remainingItems === 0 ? 'last' : ''}`}>
                {remainingItems > 0 ? `還有 ${remainingItems} 頁未看` : '✓ 已看完全部內容'}
              </div>
-             <button className="overview-btn" onClick={() => setShowOverview(true)}>📑 全部頁面</button>
+             <div className="ov-btn-wrap">
+               {gatePassed && !ovTipDone && totalItems > 3 && (
+                 <div className="ov-tip-bubble" onClick={openOverview}>
+                   💡 頁數多？點「全部頁面」可看所有縮圖，直接跳到想看的頁
+                   <button className="ov-tip-close" onClick={(e) => { e.stopPropagation(); setOvTipDone(true); safeStorage.set('album-ov-tip-done', '1'); }} aria-label="知道了">✕</button>
+                 </div>
+               )}
+               <button className={`overview-btn ${gatePassed && !ovTipDone && totalItems > 3 ? 'pulse' : ''}`} onClick={openOverview}>📑 全部頁面</button>
+             </div>
              {remainingItems > 0 ? (
                currentPos < totalItems - 1
                  ? <button className="finish-btn" onClick={goNextGlobal} disabled={!!flipState}>下一頁 ›</button>
@@ -1568,6 +1591,10 @@ function AppInner() {
                 <span className="legal-text">此為專屬機密校稿連結，為保障您的隱私，請妥善保管，勿將網址發布或分享至公開社群平台。</span>
               </div>
               <div className="legal-item">
+                <span className="legal-icon">📑</span>
+                <span className="legal-text"><strong>【快速翻頁】</strong>點選畫面下方「全部頁面」，可一次看到所有頁面縮圖，點一下即可跳到該頁，不必一頁一頁翻。</span>
+              </div>
+              <div className="legal-item">
                 <span className="legal-icon">💻</span>
                 <span className="legal-text"><strong>【最佳瀏覽建議】</strong>為確保您的審稿權益與成品準確性，建議您使用桌上型電腦、筆記型電腦或平板開啟此連結。手機等微型螢幕可能因畫面縮放導致排版壓縮、細節顯示不全，進而影響您的校稿判斷。</span>
               </div>
@@ -1590,8 +1617,7 @@ function AppInner() {
         const items = [
           ...albumPhotos.map((p, i) => ({ view: 'album' as const, i, p, label: getAlbumIndicatorLabel(i), hasFb: !!(fbA[p.id] || '').trim() })),
           ...merchPhotos.map((p, i) => ({ view: 'merch' as const, i, p, label: p.name.replace(/\.[^.]+$/, ''), hasFb: !!(fbM[p.id] || '').trim() })),
-        ].filter(it => overviewFilter === 'all' ? true : overviewFilter === 'unseen' ? !visited[posKey(it.view, it.i)] : it.hasFb);
-        const fbCount = albumPhotos.filter(p => (fbA[p.id] || '').trim()).length + merchPhotos.filter(p => (fbM[p.id] || '').trim()).length;
+        ].filter(it => overviewFilter === 'all' ? true : !visited[posKey(it.view, it.i)]);
         const renderGroup = (view: 'album' | 'merch', title: string) => {
           const list = items.filter(it => it.view === view);
           if (!list.length) return null;
@@ -1629,12 +1655,11 @@ function AppInner() {
               <div className="ov-filters">
                 <button className={`tab-btn ${overviewFilter === 'all' ? 'active' : ''}`} onClick={() => setOverviewFilter('all')}>全部（{totalItems}）</button>
                 <button className={`tab-btn ${overviewFilter === 'unseen' ? 'active' : ''}`} onClick={() => setOverviewFilter('unseen')}>未看（{remainingItems}）</button>
-                <button className={`tab-btn ${overviewFilter === 'feedback' ? 'active' : ''}`} onClick={() => setOverviewFilter('feedback')}>有修改（{fbCount}）</button>
               </div>
               <div className="ov-scroll">
                 {renderGroup('album', `📖 相冊（${albumPhotos.length} 頁）`)}
                 {renderGroup('merch', `🖼️ 周邊商品（${merchPhotos.length} 件）`)}
-                {!items.length && <div className="ov-empty">{overviewFilter === 'unseen' ? '✓ 全部頁面都看過了' : '目前沒有填寫修改建議的頁面'}</div>}
+                {!items.length && <div className="ov-empty">✓ 全部頁面都看過了</div>}
               </div>
             </div>
           </div>
