@@ -122,7 +122,7 @@ const GLOBAL_STYLES = `
     position: sticky;
     top: 0;
     z-index: 500;
-    padding: 15px 30px;
+    padding: 10px 30px;
     background: #ffffff;
     border-bottom: 1px solid #E5E9EA;
     display: flex;
@@ -146,7 +146,8 @@ const GLOBAL_STYLES = `
   .overview-btn { margin-right: 10px; padding: 8px 18px; background: #fff; color: #187880; border: 1px solid #187880; border-radius: 20px; cursor: pointer; font-size: 0.9rem; font-weight: 600; }
   .overview-btn:hover { background: rgba(24,120,128,0.08); }
   .header-actions { display: flex; align-items: center; gap: 8px; }
-  .overview-head-btn { padding: 6px 14px; }
+  .overview-head-btn { padding: 6px 14px; margin-left: 4px; }
+  .header-bar .view-tabs { flex: 0 1 auto; margin-right: auto; }
   .overview-box { position: relative; background: #fff; border-top: 5px solid #187880; border-radius: 12px; width: 100%; max-width: 1040px; max-height: 88vh; display: flex; flex-direction: column; padding: 20px 22px; box-shadow: 0 25px 60px rgba(0,0,0,0.25); }
   .ov-head { display: flex; justify-content: space-between; align-items: center; }
   .ov-tip { color: #888; font-size: 0.8rem; margin: 4px 0 10px; }
@@ -175,6 +176,14 @@ const GLOBAL_STYLES = `
     .overview-btn { padding: 8px 12px; font-size: 0.82rem; margin-right: 6px; }
     .overview-head-btn { display: none; }
   }
+
+  /* V2.18：畫筆標註 */
+  .draw-layer { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 470; pointer-events: none; }
+  .draw-layer.active { pointer-events: auto; cursor: crosshair; touch-action: none; }
+  .crop-toggle-btn-inline.draw-btn.on { background: #187880; color: #fff; }
+  .crop-toggle-btn-inline.icon-btn { padding: 8px 12px; }
+  .crop-toggle-btn-inline:disabled { opacity: 0.35; cursor: not-allowed; }
+  .toast-msg { position: fixed; top: 72px; left: 50%; transform: translateX(-50%); background: #e74c3c; color: #fff; padding: 11px 20px; border-radius: 22px; font-size: 0.9rem; font-weight: 600; z-index: 9000; box-shadow: 0 8px 25px rgba(231,76,60,0.35); width: max-content; max-width: 90vw; text-align: center; line-height: 1.4; animation: fadeIn 0.25s ease-out; }
 
   /* V2.17：全部頁面提示 */
   .ov-btn-wrap { position: relative; }
@@ -219,7 +228,7 @@ const GLOBAL_STYLES = `
     justify-content: center;
     align-items: center;
     width: 100%;
-    padding: 50px 20px 40px 20px;
+    padding: 44px 20px 12px 20px;
     perspective: 2500px;
   }
 
@@ -261,16 +270,16 @@ const GLOBAL_STYLES = `
   .album-book-container.is-back-cover .base-left { background: #fff; box-shadow: 0 15px 40px rgba(0,0,0,0.12); border-radius: 4px; }
 
   .merch-layout-wrapper { position: relative; display: flex; flex-direction: column; align-items: flex-end; width: 86vw; max-width: 800px; transition: transform 0.4s ease; }
-  .merch-image-box { position: relative; width: 100%; background: #ffffff; padding: 30px; display: flex; justify-content: center; align-items: center; border-radius: 8px; box-shadow: 0 15px 40px rgba(0,0,0,0.08); border: 1px solid #eee; }
-  .merch-img-wrapper { position: relative; display: inline-block; max-width: 100%; max-height: 55vh; }
-  .merch-img-wrapper img { display: block; max-width: 100%; max-height: 55vh; object-fit: contain; border-radius: 2px; box-shadow: 0 8px 25px rgba(0,0,0,0.15); }
+  .merch-image-box { position: relative; width: 100%; background: #ffffff; padding: 22px; display: flex; justify-content: center; align-items: center; border-radius: 8px; box-shadow: 0 15px 40px rgba(0,0,0,0.08); border: 1px solid #eee; }
+  .merch-img-wrapper { position: relative; display: inline-block; max-width: 100%; max-height: 50vh; }
+  .merch-img-wrapper img { display: block; max-width: 100%; max-height: 50vh; object-fit: contain; border-radius: 2px; box-shadow: 0 8px 25px rgba(0,0,0,0.15); }
 
-  .crop-toggle-btn-inline { margin-top: 15px; background: #ffffff; color: #187880; border: 1px solid #187880; padding: 8px 18px; border-radius: 20px; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: 0.2s; display: flex; align-items: center; gap: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+  .crop-toggle-btn-inline { margin-top: 6px; background: #ffffff; color: #187880; border: 1px solid #187880; padding: 8px 18px; border-radius: 20px; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: 0.2s; display: flex; align-items: center; gap: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
   .crop-toggle-btn-inline:hover { background: rgba(24, 120, 128, 0.05); }
   .crop-toggle-btn-inline.active { background: #ff4d4f; color: #fff; border-color: #ff4d4f; }
 
   /* V2.1 旋轉相冊 */
-  .album-tool-row { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; padding-top: 26px; } /* V2.13：預留翻折線標示空間（標示完全在相冊外） */
+  .album-tool-row { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; padding-top: 22px; } /* V2.13：預留翻折線標示空間（標示完全在相冊外） */
   .album-rotate-stage { position: relative; width: 100%; touch-action: pinch-zoom; }
   .album-book-container.is-rotated { position: absolute; top: 50%; left: 50%; perspective: 2500px; }
   .nav-btn-floating.nav-up { left: auto; right: 40px; top: calc(50% - 28px); }
@@ -320,21 +329,23 @@ const GLOBAL_STYLES = `
   .shadow-right-edge { position: absolute; right: 0; top: 0; bottom: 0; width: 35px; background: linear-gradient(to left, rgba(0,0,0,0.12), transparent); z-index: 10; pointer-events: none; }
 
   .footer-controls-area { padding: 0; background: #ffffff; border-top: 1px solid #E5E9EA; display: flex; flex-direction: column; z-index: 100; box-shadow: 0 -5px 20px rgba(0,0,0,0.03); }
-  .feedback-section { padding: 15px 30px; display: flex; gap: 20px; align-items: stretch; background: #F4F7F6; border-bottom: 1px solid #E5E9EA; justify-content: center; }
-  .feedback-info { width: 220px; display: flex; flex-direction: column; justify-content: center; flex-shrink: 0; }
-  .feedback-info h3 { color: #187880; font-size: 0.95rem; margin-bottom: 5px; font-weight: 600;}
+  .feedback-section { padding: 10px 30px; display: flex; gap: 16px; align-items: center; background: #F4F7F6; border-bottom: 1px solid #E5E9EA; justify-content: center; }
+  .feedback-info { position: relative; display: flex; flex-direction: column; align-items: flex-end; justify-content: center; flex-shrink: 0; }
+  .feedback-info h3 { color: #187880; font-size: 1.2rem; margin: 0; font-weight: 700; white-space: nowrap; }
   .feedback-info p { color: #666; font-size: 0.75rem; line-height: 1.4; }
 
   .feedback-input-container { flex: 1; max-width: 800px; display: flex; flex-direction: column; }
-  .page-feedback-textarea { width: 100%; background: #ffffff; border: 1px solid #ddd; color: #333333; border-radius: 6px; padding: 12px; font-size: 0.95rem; line-height: 1.5; resize: none; outline: none; transition: 0.2s; height: 75px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);}
+  .page-feedback-textarea { width: 100%; background: #ffffff; border: 1px solid #ddd; color: #333333; border-radius: 6px; padding: 12px; font-size: 0.95rem; line-height: 1.5; resize: none; outline: none; transition: 0.2s; height: 64px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);}
   .page-feedback-textarea::placeholder { color: #aaa; }
   .page-feedback-textarea:focus { border-color: #187880; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02), 0 0 0 3px rgba(24, 120, 128, 0.1); }
 
   .shadow-disclaimer-text { color: #888; font-size: 0.75rem; margin-top: 6px; letter-spacing: 0.5px; text-align: center;}
-  .save-status { font-size: 0.75rem; color: #187880; opacity: 0; transition: opacity 0.3s; margin-top: 5px; font-weight: 600;}
+  .save-status { position: absolute; top: 100%; right: 0; white-space: nowrap; font-size: 0.7rem; color: #187880; opacity: 0; transition: opacity 0.3s; margin-top: 2px; font-weight: 600;}
+  .page-feedback-textarea.needs-text { border-color: #e74c3c; background: #fff8f7; box-shadow: 0 0 0 3px rgba(231,76,60,0.12); }
+  .page-feedback-textarea.needs-text::placeholder { color: #e74c3c; }
   .save-status.visible { opacity: 1; }
 
-  .navigation-bar { display: flex; justify-content: flex-end; align-items: center; padding: 12px 30px; }
+  .navigation-bar { display: flex; justify-content: flex-end; align-items: center; padding: 8px 30px; }
   .finish-btn { padding: 8px 25px; background: transparent; color: #187880; border: 1px solid #187880; border-radius: 20px; cursor: pointer; font-size: 0.9rem; font-weight: 600; transition: 0.2s; min-width: 120px; }
   .finish-btn:hover { background: rgba(24, 120, 128, 0.1); }
 
@@ -371,7 +382,8 @@ const GLOBAL_STYLES = `
     .header-bar { padding: 12px 15px; flex-wrap: wrap; gap: 8px; }
     .brand-logo-text-small { font-size: 1.1rem; }
     .header-actions { margin-left: auto; }
-    .view-tabs { width: 100%; order: 3; justify-content: flex-start; padding-bottom: 5px; }
+    .view-tabs { flex: 1 1 100% !important; width: 100%; order: 3; justify-content: stretch; overflow: visible; padding: 6px 2px 2px; gap: 8px; margin-right: 0 !important; }
+    .view-tabs .tab-btn { flex: 1; padding: 8px 6px; font-size: 0.85rem; text-align: center; }
 
     .stage-center-area { padding: 45px 10px 30px 10px; }
     .stage-top-indicator { top: 12px; font-size: 0.9rem; padding: 0 45px; }
@@ -381,7 +393,7 @@ const GLOBAL_STYLES = `
     .nav-right { right: 5px; }
 
     .album-layout-wrapper, .merch-layout-wrapper { width: 92vw !important; align-items: center; justify-content: center; }
-    .crop-toggle-btn-inline { margin-top: 15px; padding: 6px 14px; font-size: 0.8rem; }
+    .crop-toggle-btn-inline { margin-top: 6px; padding: 6px 14px; font-size: 0.8rem; }
     .album-tool-row { justify-content: center; }
     .nav-btn-floating.nav-up, .nav-btn-floating.nav-down { right: 5px; }
     .nav-btn-floating.nav-up { top: calc(50% - 24px); }
@@ -389,11 +401,10 @@ const GLOBAL_STYLES = `
     .merch-img-wrapper img { max-height: 50vh; }
 
     .footer-controls-area { border-top: 1px solid #ddd; padding-bottom: max(20px, env(safe-area-inset-bottom)); }
-    .feedback-section { flex-direction: column; gap: 6px; padding: 15px; }
+    .feedback-section { flex-direction: column; align-items: stretch; gap: 6px; padding: 10px 12px; }
     .feedback-info { width: 100%; flex-direction: row; justify-content: space-between; align-items: center; }
-    .feedback-info h3 { font-size: 0.85rem; margin: 0; }
-    .feedback-info p { display: none; }
-    .save-status { margin: 0; font-size: 0.75rem; }
+    .feedback-info h3 { font-size: 1rem; margin: 0; }
+    .save-status { position: static; margin: 0; font-size: 0.72rem; }
     .page-feedback-textarea { height: 60px; padding: 8px; font-size: 0.85rem; }
     .shadow-disclaimer-text { font-size: 0.65rem; margin-top: 4px; }
 
@@ -413,6 +424,69 @@ const GLOBAL_STYLES = `
 `;
 
 interface Photo { id: string; name: string; url: string; mimeType?: string; w?: number; h?: number; }
+
+// ==========================================
+// ✍️ V2.18 畫筆標註（同精修校稿）：座標以 0–1 比例儲存，不受畫面大小影響
+// ==========================================
+type Pt = { x: number; y: number };
+type Stroke = { points: Pt[] };
+const PEN_COLOR = "#FF3B30";
+const penWidth = (w: number) => Math.max(2, w * 0.005);
+
+function DrawLayer({ strokes, active, onAdd }: { strokes: Stroke[]; active: boolean; onAdd: (s: Stroke) => void }) {
+  const ref = React.useRef<HTMLCanvasElement>(null);
+  const cur = React.useRef<Stroke | null>(null);
+  const redraw = React.useCallback(() => {
+    const c = ref.current; if (!c) return;
+    const dpr = window.devicePixelRatio || 1;
+    const w = c.clientWidth, h = c.clientHeight;
+    if (!w || !h) return;
+    if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+    const ctx = c.getContext("2d"); if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    const all = cur.current ? [...strokes, cur.current] : strokes;
+    ctx.strokeStyle = PEN_COLOR; ctx.lineWidth = penWidth(w); ctx.lineCap = "round"; ctx.lineJoin = "round";
+    all.forEach(st => {
+      ctx.beginPath();
+      st.points.forEach((pt, i) => (i === 0 ? ctx.moveTo(pt.x * w, pt.y * h) : ctx.lineTo(pt.x * w, pt.y * h)));
+      ctx.stroke();
+    });
+  }, [strokes]);
+  React.useEffect(() => {
+    redraw();
+    const c = ref.current; if (!c || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => redraw());
+    ro.observe(c);
+    return () => ro.disconnect();
+  }, [redraw]);
+  const pos = (e: React.PointerEvent): Pt => {
+    const r = ref.current!.getBoundingClientRect();
+    const r4 = (n: number) => Math.round(Math.min(1, Math.max(0, n)) * 10000) / 10000;
+    return { x: r4((e.clientX - r.left) / r.width), y: r4((e.clientY - r.top) / r.height) };
+  };
+  return (
+    <canvas
+      ref={ref}
+      className={`draw-layer ${active ? 'active' : ''}`}
+      onPointerDown={e => { if (!active) return; e.preventDefault(); e.stopPropagation(); try { (e.target as HTMLElement).setPointerCapture(e.pointerId); } catch { /* ignore */ } cur.current = { points: [pos(e)] }; }}
+      onPointerMove={e => { if (!active || !cur.current) return; e.preventDefault(); cur.current.points.push(pos(e)); redraw(); }}
+      onPointerUp={e => { if (!cur.current) return; e.stopPropagation(); const st = cur.current; cur.current = null; if (st.points.length > 1) onAdd(st); else redraw(); }}
+      onPointerCancel={() => { cur.current = null; redraw(); }}
+      onClick={e => { if (active) e.stopPropagation(); }}
+    />
+  );
+}
+
+// 載入可讀取像素的圖片（給雲端需求單合成標註用）
+const loadCorsImage = (url: string) => new Promise<HTMLImageElement | null>(resolve => {
+  const img = new Image();
+  img.crossOrigin = "anonymous";
+  const t = setTimeout(() => resolve(null), 8000);
+  img.onload = () => { clearTimeout(t); resolve(img); };
+  img.onerror = () => { clearTimeout(t); resolve(null); };
+  img.src = url;
+});
 
 // ==========================================
 // 🧰 工具函式（V2 新增）
@@ -490,6 +564,16 @@ function AppInner() {
   const [isAlbumRotated, setIsAlbumRotated] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [merchVisited, setMerchVisited] = useState(false);
+  // V2.18：畫筆標註
+  const [drawings, setDrawings] = useState<Record<string, Stroke[]>>({});
+  const [drawMode, setDrawMode] = useState(false);
+  const [toast, setToast] = useState("");
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showToast = (msg: string) => {
+    setToast(msg);
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToast(""), 3200);
+  };
   // V2.15：全螢幕看圖（同精修校稿）
   const [fs, setFs] = useState(false);
   // V2.16：頁面總覽＋已看紀錄（不必一頁頁翻）
@@ -538,8 +622,8 @@ function AppInner() {
   // 💾 草稿自動存檔（依資料夾 ID，保留 30 天）→ 重整、誤關、從 LINE 返回都不遺失
   useEffect(() => {
     if (!folderId || !draftReadyRef.current) return;
-    safeStorage.set(DRAFT_PREFIX + folderId, JSON.stringify({ savedAt: Date.now(), feedbacks: allFeedbacks }));
-  }, [allFeedbacks, folderId]);
+    safeStorage.set(DRAFT_PREFIX + folderId, JSON.stringify({ savedAt: Date.now(), feedbacks: allFeedbacks, drawings }));
+  }, [allFeedbacks, drawings, folderId]);
 
   useEffect(() => { if (currentView === 'merch') setMerchVisited(true); }, [currentView]);
 
@@ -747,7 +831,7 @@ function AppInner() {
       if (raw) {
         try {
           const d = JSON.parse(raw);
-          if (d && Date.now() - d.savedAt < DRAFT_TTL_MS) restored = d.feedbacks || {};
+          if (d && Date.now() - d.savedAt < DRAFT_TTL_MS) { restored = d.feedbacks || {}; if (d.drawings) setDrawings(d.drawings); }
           else safeStorage.remove(DRAFT_PREFIX + id);
         } catch { /* ignore */ }
       }
@@ -802,7 +886,14 @@ function AppInner() {
     if (!k) return;
     jumpTo(k[0] === 'a' ? 'album' : 'merch', Number(k.slice(1)));
   };
+  // V2.18：畫筆必附文字（同精修）
+  const fbText = (id: string) => ((allFeedbacks['album'] || {})[id] || (allFeedbacks['merch'] || {})[id] || '').trim();
+  const needsText = (id: string) => !!(drawings[id] && drawings[id].length) && !fbText(id);
+  const NEEDS_TEXT_MSG = "✍️ 這頁有畫筆標註，請在下方「修改建議」說明要修改的內容";
+  const currentId = () => currentView === 'album' ? albumPhotos[albumSpreadIndex]?.id : merchPhotos[merchIndex]?.id;
   const goNextGlobal = () => {
+    const cid = currentId();
+    if (cid && needsText(cid)) { showToast(NEEDS_TEXT_MSG); return; }
     if (currentView === 'album') {
       if (albumSpreadIndex < maxSpreads) handlePageChange(albumSpreadIndex + 1);
       else if (merchPhotos.length > 0 && !flipState) { setCurrentView('merch'); setMerchIndex(0); }
@@ -810,6 +901,7 @@ function AppInner() {
       setMerchIndex(prev => Math.min(merchPhotos.length - 1, prev + 1));
     }
   };
+  useEffect(() => { setDrawMode(false); }, [currentView, albumSpreadIndex, merchIndex]);
   // 目前這頁標記為已看（記在本機，重新整理不會重算）
   useEffect(() => {
     if (!gatePassed || totalItems === 0) return;
@@ -858,7 +950,7 @@ function AppInner() {
   const handleMerchTouchEnd = (e: React.TouchEvent) => {
     const start = touchStartRef.current;
     touchStartRef.current = null;
-    if (!start || !gatePassed) return;
+    if (!start || !gatePassed || drawMode) return;
     const dx = e.changedTouches[0].clientX - start.x;
     const dy = e.changedTouches[0].clientY - start.y;
     if (fs && dy > 90 && dy > Math.abs(dx) * 1.5) { exitFs(); return; }
@@ -868,7 +960,7 @@ function AppInner() {
   const handleAlbumTouchEnd = (e: React.TouchEvent) => {
     const start = touchStartRef.current;
     touchStartRef.current = null;
-    if (!start || !gatePassed || flipState) return;
+    if (!start || !gatePassed || flipState || drawMode) return;
     const dx = e.changedTouches[0].clientX - start.x;
     const dy = e.changedTouches[0].clientY - start.y;
     if (fs && !isAlbumRotated && dy > 90 && dy > Math.abs(dx) * 1.5) { exitFs(); return; }
@@ -915,25 +1007,66 @@ function AppInner() {
     const albumFb = allFeedbacks['album'] || {};
     const merchFb = allFeedbacks['merch'] || {};
     const album = albumPhotos
-      .map((p, idx) => ({ type: 'album', id: p.id, name: p.name, label: getAlbumIndicatorLabel(idx), feedback: (albumFb[p.id] || '').trim() }))
-      .filter(it => it.feedback);
+      .map((p, idx) => ({ type: 'album', id: p.id, name: p.name, label: getAlbumIndicatorLabel(idx), feedback: (albumFb[p.id] || '').trim(), strokes: drawings[p.id] || [], idx }))
+      .filter(it => it.feedback || it.strokes.length);
     const merch = merchPhotos
-      .map(p => ({ type: 'merch', id: p.id, name: p.name, label: p.name.split('.')[0], feedback: (merchFb[p.id] || '').trim() }))
-      .filter(it => it.feedback);
+      .map((p, idx) => ({ type: 'merch', id: p.id, name: p.name, label: p.name.split('.')[0], feedback: (merchFb[p.id] || '').trim(), strokes: drawings[p.id] || [], idx }))
+      .filter(it => it.feedback || it.strokes.length);
     return { album, merch };
   };
 
   const generateFeedbackSummary = () => {
     const { album, merch } = collectFeedbackItems();
     let summary = "";
-    if (album.length) summary += `\n📖 【3D 相冊校稿】：\n` + album.map(it => `📍 [相冊 - ${it.label}]：\n   ${it.feedback}\n`).join("");
-    if (merch.length) summary += `\n🖼️ 【周邊商品校稿】：\n` + merch.map(it => `📍 [周邊 - ${it.label}]：\n   ${it.feedback}\n`).join("");
+    const mark = (it: { strokes: Stroke[] }) => (it.strokes.length ? '（含畫面標註）' : '');
+    if (album.length) summary += `\n📖 【相冊校稿】：\n` + album.map(it => `📍 [相冊 - ${it.label}]${mark(it)}：\n   ${it.feedback}\n`).join("");
+    if (merch.length) summary += `\n🖼️ 【框畫校稿】：\n` + merch.map(it => `📍 [框畫 - ${it.label}]${mark(it)}：\n   ${it.feedback}\n`).join("");
     return summary.trim();
+  };
+
+  // V2.18：把「照片＋紅筆」合成一張 JPG，放進雲端 PDF 需求單
+  const renderAnnotated = async (it: { type: string; id: string; idx: number; strokes: Stroke[] }) => {
+    if (!it.strokes.length) return null;
+    const p = it.type === 'album' ? albumPhotos[it.idx] : merchPhotos[it.idx];
+    if (!p) return null;
+    const img = await loadCorsImage(`https://lh3.googleusercontent.com/d/${p.id}=w1600`);
+    if (!img || !img.naturalWidth) return null;
+    const W = 1600;
+    let H: number, draw: (ctx: CanvasRenderingContext2D) => void;
+    if (it.type === 'album') {
+      const ratio = dynamicAspectRatio || 2;
+      H = Math.round(W / ratio);
+      const single = checkIsSinglePage(p, it.idx, albumPhotos.length);
+      draw = ctx => {
+        if (!single) ctx.drawImage(img, 0, 0, W, H);
+        else if (it.idx === 0) ctx.drawImage(img, W / 2, 0, W / 2, H);
+        else ctx.drawImage(img, 0, 0, W / 2, H);
+      };
+    } else {
+      const tr = getMerchTrim(p);
+      const box = tr && !tr.silk ? tr.box : { sx: 0, sy: 0, sw: 1, sh: 1 };
+      const iw = img.naturalWidth, ih = img.naturalHeight;
+      H = Math.round(W * (ih * box.sh) / (iw * box.sw));
+      draw = ctx => ctx.drawImage(img, iw * box.sx, ih * box.sy, iw * box.sw, ih * box.sh, 0, 0, W, H);
+    }
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    const ctx = c.getContext('2d'); if (!ctx) return null;
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
+    draw(ctx);
+    ctx.strokeStyle = PEN_COLOR; ctx.lineWidth = penWidth(W); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    it.strokes.forEach(st => { ctx.beginPath(); st.points.forEach((pt, i) => (i === 0 ? ctx.moveTo(pt.x * W, pt.y * H) : ctx.lineTo(pt.x * W, pt.y * H))); ctx.stroke(); });
+    try { return { image: c.toDataURL('image/jpeg', 0.82), w: W, h: H }; } catch { return null; }
   };
 
   // ☁️ 雲端備份：存到該案資料夾內「校稿回覆」（JSON＋TXT＋PDF）並自動鎖定連結
   const backupToCloud = async (type: "approve" | "feedback", ref: string, summary: string, beacon = false) => {
-    const { album, merch } = collectFeedbackItems();
+    const fb = collectFeedbackItems();
+    const withImg = async (list: typeof fb.album) => Promise.all(list.map(async it => {
+      const a = beacon ? null : await renderAnnotated(it);
+      const { idx, ...rest } = it;
+      return { ...rest, strokeCount: it.strokes.length, ...(a || {}) };
+    }));
+    const album = await withImg(fb.album), merch = await withImg(fb.merch);
     const payload = {
       action: 'submit',
       folderId,
@@ -968,6 +1101,15 @@ function AppInner() {
   };
 
   // 👑 LINE 串接：先複製 → 同步雲端（最多等 8 秒）→ 跳轉 LINE
+  // V2.18：送出前檢查「有畫筆、沒文字」的頁面
+  const handleFinishClick = () => {
+    const ai = albumPhotos.findIndex(p => needsText(p.id));
+    if (ai !== -1) { jumpTo('album', ai); showToast(`「${getAlbumIndicatorLabel(ai)}」有畫筆標註，請補上文字說明後再送出`); return; }
+    const mi = merchPhotos.findIndex(p => needsText(p.id));
+    if (mi !== -1) { jumpTo('merch', mi); showToast(`「${merchPhotos[mi].name.split('.')[0]}」有畫筆標註，請補上文字說明後再送出`); return; }
+    setShowFinalUI(true);
+  };
+
   const handleSendToLine = async (type: "approve" | "feedback") => {
     if (sendingStatus) return; // 防止重複點擊
 
@@ -1164,6 +1306,7 @@ function AppInner() {
     try { if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {}); } catch { /* ignore */ }
   };
   const enterFs = () => {
+    setDrawMode(false);
     setFs(true);
     setFsUi(true);
     try { const el: any = document.documentElement; if (el.requestFullscreen) el.requestFullscreen().catch(() => {}); } catch { /* ignore */ }
@@ -1178,13 +1321,38 @@ function AppInner() {
     <button className="crop-toggle-btn-inline" onClick={enterFs} title="全螢幕看作品">⛶ 全螢幕</button>
   );
 
+  // ✍️ 畫筆工具列（相冊、框畫共用）
+  const addStroke = (id: string) => (st: Stroke) => setDrawings(d => ({ ...d, [id]: [...(d[id] || []), st] }));
+  const renderDrawTools = (id?: string) => {
+    if (!id) return null;
+    const has = !!(drawings[id] && drawings[id].length);
+    return (
+      <>
+        <button
+          className={`crop-toggle-btn-inline draw-btn ${drawMode ? 'on' : ''}`}
+          onClick={() => { if (!drawMode) { setIsAlbumRotated(false); showToast("✍️ 直接在畫面上圈出要修改的地方，畫完請在下方寫說明"); } setDrawMode(m => !m); }}
+          title="在畫面上用紅筆圈出要修改的位置"
+        >
+          {drawMode ? '✋ 完成標註' : '✍️ 畫筆標註'}
+        </button>
+        {(drawMode || has) && (
+          <>
+            <button className="crop-toggle-btn-inline icon-btn" disabled={!has} onClick={() => setDrawings(d => ({ ...d, [id]: (d[id] || []).slice(0, -1) }))} title="復原上一筆">↩️</button>
+            <button className="crop-toggle-btn-inline icon-btn" disabled={!has} onClick={() => setDrawings(d => ({ ...d, [id]: [] }))} title="清除這頁標註">🗑️</button>
+          </>
+        )}
+      </>
+    );
+  };
+
   const renderAlbumTools = () => gatePassed ? (
     <div className="album-tool-row">
+      {renderDrawTools(albumPhotos[albumSpreadIndex]?.id)}
       {fsButton}
       <button
         className="crop-toggle-btn-inline"
         style={isAlbumRotated ? { background: '#187880', color: '#fff' } : undefined}
-        onClick={() => setIsAlbumRotated(r => !r)}
+        onClick={() => { setDrawMode(false); setIsAlbumRotated(r => !r); }}
         title="手機直拿時可旋轉放大跨頁，改為上下滑動翻頁"
       >
         {isAlbumRotated ? '↩️ 恢復原方向' : '🔄 旋轉相冊'}
@@ -1234,6 +1402,7 @@ function AppInner() {
     return {
       ruleName: rule.name,
       silk: false as const,
+      box: { sx: fl, sy: ft, sw: keepW, sh: keepH },
       ratio: shownW / shownH,
       bgSize: `${100 / keepW}% ${100 / keepH}%`,
       bgPos: `${fl + fr > 0 ? (fl / (fl + fr)) * 100 : 50}% ${ft + fb > 0 ? (ft / (ft + fb)) * 100 : 50}%`,
@@ -1267,6 +1436,8 @@ function AppInner() {
 
         <header className="header-bar">
           <div className="brand-logo-text-small">辰妍國際</div>
+          {/* V2.18：電腦版「全部頁面」移到左上、分頁前 */}
+          <button className="tab-btn overview-head-btn" onClick={openOverview}>📑 全部頁面</button>
 
           {merchPhotos.length > 0 && albumPhotos.length > 0 && (
             <div className="view-tabs">
@@ -1274,20 +1445,19 @@ function AppInner() {
                 className={`tab-btn ${currentView === 'album' ? 'active' : ''}`}
                 onClick={() => setCurrentView('album')}
               >
-                <span>📖 3D 相冊校稿</span>
+                <span>📖 相冊校稿</span>
               </button>
               <button
                 className={`tab-btn ${currentView === 'merch' ? 'active' : ''} ${!merchVisited ? 'tab-attention' : ''}`}
                 onClick={() => setCurrentView('merch')}
               >
-                <span>🖼️ 周邊商品校稿</span>
+                <span>🖼️ 框畫校稿</span>
                 {!merchVisited && <span className="more-badge">{merchPhotos.length}</span>}
               </button>
             </div>
           )}
 
           <div className="header-actions">
-            <button className="tab-btn overview-head-btn" onClick={openOverview}>📑 全部頁面</button>
             {/* V2：離開後不清除網址（客人重整即可回來，草稿仍在），也不會卡在「載入中」 */}
             <button className="logout-btn" onClick={() => { setAlbumPhotos([]); setMerchPhotos([]); setGatePassed(false); setShowFinalUI(false); setError("您已離開校稿頁面，填寫內容已暫存於此裝置，重新整理即可繼續。"); }}>離開</button>
           </div>
@@ -1296,7 +1466,7 @@ function AppInner() {
         {/* V2.6：提醒客人周邊商品也要校稿（點一下直接切換） */}
         {gatePassed && albumPhotos.length > 0 && merchPhotos.length > 0 && !merchVisited && (
           <div className="merch-hint" onClick={() => setCurrentView('merch')}>
-            <span>📦 本次另有 {merchPhotos.length} 件周邊商品需要校稿，請點選上方「周邊商品校稿」👆</span>
+            <span>📦 框畫商品在相冊最後頁，或點選上方按鈕校稿</span>
           </div>
         )}
 
@@ -1327,11 +1497,19 @@ function AppInner() {
                   </div>
                 )}
 
+                {!flipState && gatePassed && albumPhotos[albumSpreadIndex] && (
+                  <DrawLayer
+                    key={albumPhotos[albumSpreadIndex].id}
+                    strokes={drawings[albumPhotos[albumSpreadIndex].id] || []}
+                    active={drawMode && !isAlbumRotated}
+                    onAdd={addStroke(albumPhotos[albumSpreadIndex].id)}
+                  />
+                )}
                 {/* V2.8：中央翻折線（僅提示翻折位置，印刷不會出現） */}
                 {gatePassed && showAlbumCropLines && !flipState && !isCurrentViewSingle && (
                   <>
                     <div className="fold-line" />
-                    <div className="fold-label">翻折線・印刷不會出現</div>
+                    <div className="fold-label">翻折中線及陰影印刷不會出現</div>
                   </>
                 )}
                 {gatePassed && showAlbumCropLines && (
@@ -1372,7 +1550,7 @@ function AppInner() {
                 {renderAlbumTools()}
               </div>
             ) : (
-              <div className="album-layout-wrapper" style={{ maxWidth: `calc(${fs ? 78 : 55}vh * ${dynamicAspectRatio})`, ...(fs ? { width: '94vw' } : {}) }} onTouchStart={handleAlbumTouchStart} onTouchEnd={handleAlbumTouchEnd}>
+              <div className="album-layout-wrapper" style={{ maxWidth: `calc(${fs ? 78 : 50}vh * ${dynamicAspectRatio})`, ...(fs ? { width: '94vw' } : {}) }} onTouchStart={handleAlbumTouchStart} onTouchEnd={handleAlbumTouchEnd}>
                 <div
                   className={containerClasses}
                   style={{ aspectRatio: dynamicAspectRatio, transform: containerTransform }}
@@ -1416,7 +1594,7 @@ function AppInner() {
                   const mp = merchPhotos[merchIndex];
                   const trim = getMerchTrim(mp);
                   if (trim && !trim.silk) {
-                    const maxH = fs ? 80 : (typeof window !== 'undefined' && window.innerWidth <= 768 ? 50 : 55);
+                    const maxH = fs ? 80 : 50;
                     return (
                       <div
                         className="merch-img-wrapper"
@@ -1428,6 +1606,7 @@ function AppInner() {
                           borderRadius: 2, boxShadow: '0 8px 25px rgba(0,0,0,0.15)',
                         }}
                       >
+                        {gatePassed && <DrawLayer key={mp.id} strokes={drawings[mp.id] || []} active={drawMode} onAdd={addStroke(mp.id)} />}
                         {gatePassed && showMerchCropLines && (
                           <>
                             <div className="crop-line-overlay outside" style={trim.crop} />
@@ -1441,6 +1620,7 @@ function AppInner() {
                   }
                   return (
                     <div className="merch-img-wrapper">
+                      {gatePassed && <DrawLayer key={mp.id} strokes={drawings[mp.id] || []} active={drawMode} onAdd={addStroke(mp.id)} />}
                       <img
                         src={mp.url}
                         alt={mp.name}
@@ -1472,6 +1652,7 @@ function AppInner() {
 
               {gatePassed && (
                 <div className="album-tool-row merch-tool-row">
+                  {renderDrawTools(merchPhotos[merchIndex]?.id)}
                   {fsButton}
                   <button
                     className={`crop-toggle-btn-inline ${showMerchCropLines ? 'active' : ''}`}
@@ -1499,49 +1680,27 @@ function AppInner() {
 
         <footer className="footer-controls-area">
 
-          {currentView === 'album' && albumPhotos.length > 0 && (
-            <div className="feedback-section">
-              <div className="feedback-info">
-                <h3>📝 修改建議</h3>
-                <p>若對此頁照片有調整需求，請在此詳細說明。</p>
-                <div className={`save-status ${saveIndicator ? 'visible' : ''}`}>✓ 內容已自動暫存</div>
-              </div>
-              <div className="feedback-input-container">
-                <textarea
-                  className="page-feedback-textarea"
-                  placeholder={`請輸入修改建議... (若無須修改請留白，翻頁會自動存檔)`}
-                  value={(allFeedbacks['album'] || {})[currentAlbumPhoto?.id] || ''}
-                  onChange={(e) => currentAlbumPhoto && handleFeedbackChange(currentAlbumPhoto.id, e.target.value)}
-                  onBlur={triggerSaveIndicator}
-                />
-                <div className="shadow-disclaimer-text">
-                  * 中央綠色虛線為翻折位置提示、深色陰影為 3D 模擬效果，實體印刷皆不會出現。
+          {((currentView === 'album' && albumPhotos.length > 0) || (currentView === 'merch' && merchPhotos.length > 0)) && (() => {
+            const fid = currentView === 'album' ? currentAlbumPhoto?.id : merchPhotos[merchIndex]?.id;
+            return (
+              <div className="feedback-section">
+                <div className="feedback-info">
+                  <h3>📝 修改建議</h3>
+                  <div className={`save-status ${saveIndicator ? 'visible' : ''}`}>✓ 已自動暫存</div>
+                </div>
+                <div className="feedback-input-container">
+                  <textarea
+                    className={`page-feedback-textarea ${fid && needsText(fid) ? 'needs-text' : ''}`}
+                    placeholder={fid && needsText(fid) ? '⚠️ 您已在畫面上標註，請說明要修改的內容（必填）' : '請輸入修改建議...（若無須修改請留白，換頁會自動存檔）'}
+                    value={(allFeedbacks[currentView] || {})[fid || ''] || ''}
+                    onChange={(e) => fid && handleFeedbackChange(fid, e.target.value)}
+                    onFocus={() => setDrawMode(false)}
+                    onBlur={triggerSaveIndicator}
+                  />
                 </div>
               </div>
-            </div>
-          )}
-
-          {currentView === 'merch' && merchPhotos.length > 0 && (
-             <div className="feedback-section">
-              <div className="feedback-info">
-                <h3>📝 修改建議</h3>
-                <p>若對此商品有調整需求，請在此詳細說明。</p>
-                <div className={`save-status ${saveIndicator ? 'visible' : ''}`}>✓ 內容已自動暫存</div>
-              </div>
-              <div className="feedback-input-container">
-                <textarea
-                  className="page-feedback-textarea"
-                  placeholder={`請輸入修改建議... (若無須修改請留白，切換會自動存檔)`}
-                  value={(allFeedbacks['merch'] || {})[merchPhotos[merchIndex].id] || ''}
-                  onChange={(e) => handleFeedbackChange(merchPhotos[merchIndex].id, e.target.value)}
-                  onBlur={triggerSaveIndicator}
-                />
-                <div className="shadow-disclaimer-text">
-                  * 點擊左右箭頭切換商品，系統會自動儲存您的修改建議。
-                </div>
-              </div>
-            </div>
-          )}
+            );
+          })()}
 
           <div className="navigation-bar">
              <div className={`page-remaining ${remainingItems === 0 ? 'last' : ''}`}>
@@ -1561,7 +1720,7 @@ function AppInner() {
                  ? <button className="finish-btn" onClick={goNextGlobal} disabled={!!flipState}>下一頁 ›</button>
                  : <button className="finish-btn" onClick={jumpToFirstUnseen}>前往未看頁 ›</button>
              ) : (
-               <button className="finish-btn" onClick={() => setShowFinalUI(true)}>完成並送出</button>
+               <button className="finish-btn" onClick={handleFinishClick}>完成並送出</button>
              )}
           </div>
         </footer>
@@ -1605,6 +1764,8 @@ function AppInner() {
         </div>
       )}
 
+      {toast && <div className="toast-msg">{toast}</div>}
+
       {/* V2.16：頁面總覽 — 點縮圖直接跳到該頁 */}
       {showOverview && (() => {
         const fbA = allFeedbacks['album'] || {}, fbM = allFeedbacks['merch'] || {};
@@ -1615,8 +1776,8 @@ function AppInner() {
           return u;
         };
         const items = [
-          ...albumPhotos.map((p, i) => ({ view: 'album' as const, i, p, label: getAlbumIndicatorLabel(i), hasFb: !!(fbA[p.id] || '').trim() })),
-          ...merchPhotos.map((p, i) => ({ view: 'merch' as const, i, p, label: p.name.replace(/\.[^.]+$/, ''), hasFb: !!(fbM[p.id] || '').trim() })),
+          ...albumPhotos.map((p, i) => ({ view: 'album' as const, i, p, label: getAlbumIndicatorLabel(i), hasFb: !!(fbA[p.id] || '').trim() || !!(drawings[p.id] || []).length })),
+          ...merchPhotos.map((p, i) => ({ view: 'merch' as const, i, p, label: p.name.replace(/\.[^.]+$/, ''), hasFb: !!(fbM[p.id] || '').trim() || !!(drawings[p.id] || []).length })),
         ].filter(it => overviewFilter === 'all' ? true : !visited[posKey(it.view, it.i)]);
         const renderGroup = (view: 'album' | 'merch', title: string) => {
           const list = items.filter(it => it.view === view);
@@ -1658,7 +1819,7 @@ function AppInner() {
               </div>
               <div className="ov-scroll">
                 {renderGroup('album', `📖 相冊（${albumPhotos.length} 頁）`)}
-                {renderGroup('merch', `🖼️ 周邊商品（${merchPhotos.length} 件）`)}
+                {renderGroup('merch', `🖼️ 框畫商品（${merchPhotos.length} 件）`)}
                 {!items.length && <div className="ov-empty">✓ 全部頁面都看過了</div>}
               </div>
             </div>
