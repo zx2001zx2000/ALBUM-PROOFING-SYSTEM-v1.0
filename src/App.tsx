@@ -177,6 +177,9 @@ const GLOBAL_STYLES = `
     .overview-head-btn { display: none; }
   }
 
+  .load-spinner { width: 42px; height: 42px; margin: 18px auto 0; border: 3px solid rgba(24,120,128,0.12); border-top-color: #187880; border-radius: 50%; animation: spin 0.9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
   /* V2.18：畫筆標註 */
   .draw-layer { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 470; pointer-events: none; }
   .draw-layer.active { pointer-events: auto; cursor: crosshair; touch-action: none; }
@@ -423,7 +426,7 @@ const GLOBAL_STYLES = `
   }
 `;
 
-interface Photo { id: string; name: string; url: string; mimeType?: string; w?: number; h?: number; }
+interface Photo { id: string; name: string; url: string; low?: string; mimeType?: string; w?: number; h?: number; }
 
 // ==========================================
 // ✍️ V2.18 畫筆標註（同精修校稿）：座標以 0–1 比例儲存，不受畫面大小影響
@@ -498,7 +501,24 @@ const isImageFile = (f: Photo) =>
 const naturalCompare = (a = "", b = "") =>
   a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
 
-const fastUrl = (id: string) => `https://lh3.googleusercontent.com/d/${id}=w2400`;
+// ⚡ V2.19 載入加速：依螢幕大小決定圖片解析度（手機約 1400px、電腦約 2200px），不再一律 2400px
+const DPR = typeof window !== "undefined" ? Math.min(window.devicePixelRatio || 1, 1.5) : 1;
+const SCREEN_LONG = typeof window !== "undefined" ? Math.max(window.innerWidth, window.innerHeight) : 1600;
+const VIEW_SZ = Math.min(2400, Math.max(1000, Math.ceil((SCREEN_LONG * DPR) / 200) * 200));
+const LOW_SZ = 480;   // 先顯示的低解析預覽（約 30KB，秒開）
+const fastUrl = (id: string, sz = VIEW_SZ) => `https://lh3.googleusercontent.com/d/${id}=s${sz}`;
+const thumbUrl = (id: string, sz = VIEW_SZ) => `https://drive.google.com/thumbnail?id=${id}&sz=s${sz}`;
+const LIST_CACHE_PREFIX = "album-list-v1-";
+// 提前和 Google 伺服器建立連線（省下約 0.3–1 秒）
+if (typeof document !== "undefined") {
+  ["https://lh3.googleusercontent.com", "https://script.google.com", "https://script.googleusercontent.com", "https://drive.google.com"].forEach(h => {
+    try {
+      if (document.querySelector(`link[rel="preconnect"][href="${h}"]`)) return;
+      const l = document.createElement("link"); l.rel = "preconnect"; l.href = h; l.crossOrigin = "anonymous";
+      document.head.appendChild(l);
+    } catch { /* ignore */ }
+  });
+}
 
 // 載入圖片並回傳比例；失敗或逾時回傳 null（不再默默當成 2:1）
 const loadImage = (url: string, timeoutMs = 8000): Promise<number | null> =>
@@ -563,6 +583,7 @@ function AppInner() {
   // V2.1：整本旋轉 90°（手機直拿時跨頁可放大，改為上下翻閱）
   const [isAlbumRotated, setIsAlbumRotated] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const urlModeRef = useRef<'lh3' | 'thumb' | 'orig'>(USE_FAST_CDN ? 'lh3' : 'thumb');
   const [merchVisited, setMerchVisited] = useState(false);
   // V2.18：畫筆標註
   const [drawings, setDrawings] = useState<Record<string, Stroke[]>>({});
@@ -664,7 +685,7 @@ function AppInner() {
   // 🚀 預載前後兩個跨頁，翻頁時不再出現白頁閃爍
   useEffect(() => {
     if (currentView === 'album') {
-      [1, 2, -1].forEach(d => { const p = albumPhotos[albumSpreadIndex + d]; if (p) { const i = new Image(); i.src = p.url; } });
+      [1, -1, 2].forEach(d => { const p = albumPhotos[albumSpreadIndex + d]; if (p) { const i = new Image(); i.src = p.url; } });
     } else {
       [1, -1].forEach(d => { const p = merchPhotos[merchIndex + d]; if (p) { const i = new Image(); i.src = p.url; } });
     }
@@ -747,85 +768,52 @@ function AppInner() {
     throw lastErr;
   };
 
-  const fetchPhotos = async (id: string) => {
-    setLoading(true); setError("");
-    try {
-      const data = await fetchWithRetry(`${API_URL}?folderId=${id}`);
+  // ⚡ V2.19：把清單整理成相冊／框畫並顯示（快取或最新資料共用）
+  const applyList = async (data: Photo[], id: string, opts: { restoreDraft: boolean }) => {
+    const rawData: Photo[] = (Array.isArray(data) ? data : []).filter(isImageFile);
+    const filteredAlbum: Photo[] = [];
+    const filteredMerch: Photo[] = [];
+    rawData.forEach(file => {
+      const n = normalizeMerchName(file.name);
+      // V2.9：相冊公版檔名一律含「相冊」，封面／封底含「封面」「封底」→ 歸相冊；其餘符合條件者歸框畫
+      const albumGuard = /相冊|相本|跨頁|封面|封底/.test(n);
+      const isMerch = !albumGuard && (/框|畫|卡|海報|桌曆|周邊|簽名|小物|相紙|蠶絲|\d+x\d+/.test(n) || !!getMerchTrimRule(n));
+      const isAlbumCover = (n.includes("封面") || n.includes("封底")) && !isMerch;
+      if (isMerch && !isAlbumCover) filteredMerch.push(file); else filteredAlbum.push(file);
+    });
+    const getWeight = (filename = "") => {
+      const n = filename.toLowerCase();
+      if (n.includes("封面") || n.startsWith("000")) return -999999;
+      if (n.includes("封底")) return 999999;
+      const match = filename.match(/_(\d+)/);
+      return (match && match[1]) ? parseInt(match[1], 10) : 0;
+    };
+    const sortedAlbum = filteredAlbum.sort((a, b) => (getWeight(a.name) - getWeight(b.name)) || naturalCompare(a.name, b.name));
+    const sortedMerch = filteredMerch.sort((a, b) => naturalCompare(a.name, b.name));
 
-      // 🔒 已送出鎖定
-      if (data && !Array.isArray(data) && data.locked) {
-        safeStorage.remove(DRAFT_PREFIX + id);
-        setError("此校稿已完成送出 ✅ 如需再次調整，請透過 LINE 與我們聯繫，謝謝您！");
-        return;
-      }
+    // 版面比例：優先用 Apps Script 回傳的原始寬高（不必先下載大圖）；沒有才載低解析圖量測
+    const probe = sortedAlbum.find((p, idx) => !checkIsSinglePage(p, idx, sortedAlbum.length)) || sortedAlbum[0] || null;
+    if (probe) {
+      let ratio: number | null = probe.w && probe.h ? probe.w / probe.h : null;
+      if (ratio === null) ratio = (await loadImage(fastUrl(probe.id, LOW_SZ), 5000)) ?? (await loadImage(thumbUrl(probe.id, LOW_SZ), 5000));
+      const isSpread = !checkIsSinglePage(probe, sortedAlbum.indexOf(probe), sortedAlbum.length);
+      setDynamicAspectRatio(isSpread ? (ratio ?? 2) : (ratio ?? 1) * 2);
+    } else {
+      setDynamicAspectRatio(2);
+    }
 
-      // 只保留圖片檔（排除 txt / json / 鎖定檔等）
-      const rawData: Photo[] = (Array.isArray(data) ? data : []).filter(isImageFile);
+    const mode = urlModeRef.current;
+    const mapUrl = (p: Photo): Photo => mode === 'orig'
+      ? { ...p, low: undefined }
+      : mode === 'thumb'
+        ? { ...p, url: thumbUrl(p.id), low: thumbUrl(p.id, LOW_SZ) }
+        : { ...p, url: fastUrl(p.id), low: fastUrl(p.id, LOW_SZ) };
+    setAlbumPhotos(sortedAlbum.map(mapUrl));
+    setMerchPhotos(sortedMerch.map(mapUrl));
 
-      const filteredAlbum: Photo[] = [];
-      const filteredMerch: Photo[] = [];
-
-      rawData.forEach(file => {
-        const n = normalizeMerchName(file.name);
-        // V2.9：相冊公版檔名一律含「相冊」，封面／封底含「封面」「封底」→ 歸相冊；其餘符合周邊條件者歸周邊
-        const albumGuard = /相冊|相本|跨頁|封面|封底/.test(n);
-        const isMerch = !albumGuard && (/框|畫|卡|海報|桌曆|周邊|簽名|小物|相紙|蠶絲|\d+x\d+/.test(n) || !!getMerchTrimRule(n));
-        const isAlbumCover = (n.includes("封面") || n.includes("封底")) && !isMerch;
-
-        if (isMerch && !isAlbumCover) {
-          filteredMerch.push(file);
-        } else {
-          filteredAlbum.push(file);
-        }
-      });
-
-      const getWeight = (filename = "") => {
-        const n = filename.toLowerCase();
-        if (n.includes("封面") || n.startsWith("000")) return -999999;
-        if (n.includes("封底")) return 999999;
-        const match = filename.match(/_(\d+)/);
-        return (match && match[1]) ? parseInt(match[1], 10) : 0;
-      };
-      // V2：同權重時以檔名自然排序（避免 1, 10, 2 亂序）
-      const sortedAlbum = filteredAlbum.sort((a, b) => (getWeight(a.name) - getWeight(b.name)) || naturalCompare(a.name, b.name));
-      const sortedMerch = filteredMerch.sort((a, b) => naturalCompare(a.name, b.name));
-
-      // ⚡ 圖片網址：依序測試 lh3 CDN → Drive 縮圖 → 原網址，採用第一個能顯示的
-      //    （Google 已限制 uc?export=view 嵌入，單靠原網址常會白屏）
-      const probe = sortedAlbum.find((p, idx) => !checkIsSinglePage(p, idx, sortedAlbum.length)) || sortedAlbum[0] || null;
-      const probeTarget = probe || sortedMerch[0] || null;
-      const urlBuilders: ((p: Photo) => string)[] = [
-        ...(USE_FAST_CDN ? [(p: Photo) => fastUrl(p.id)] : []),
-        (p: Photo) => `https://drive.google.com/thumbnail?id=${p.id}&sz=w2400`,
-        (p: Photo) => p.url,
-      ];
-      let ratio: number | null = null;
-      let chosen: ((p: Photo) => string) | null = null;
-      if (probeTarget) {
-        for (const build of urlBuilders) {
-          ratio = await loadImage(build(probeTarget), 6000);
-          if (ratio !== null) { chosen = build; break; }
-        }
-      }
-      if (probeTarget && !chosen) {
-        throw new Error("照片無法顯示：請將校稿資料夾的共用設定改為「知道連結的任何人 → 檢視者」後重新整理。");
-      }
-      const mapUrl = (p: Photo) => (chosen ? { ...p, url: chosen(p) } : p);
-
-      if (probe) {
-        const isSpread = !checkIsSinglePage(probe, sortedAlbum.indexOf(probe), sortedAlbum.length);
-        const natural = ratio ?? 1;
-        setDynamicAspectRatio(isSpread ? (ratio ?? 2) : natural * 2);
-      } else {
-        setDynamicAspectRatio(2);
-      }
-
-      setAlbumPhotos(sortedAlbum.map(mapUrl));
-      setMerchPhotos(sortedMerch.map(mapUrl));
+    if (opts.restoreDraft) {
       setAlbumSpreadIndex(0);
       setMerchIndex(0);
-
-      // 還原草稿
       let restored: Record<string, Record<string, string>> = {};
       const raw = safeStorage.get(DRAFT_PREFIX + id);
       if (raw) {
@@ -837,18 +825,81 @@ function AppInner() {
       }
       setAllFeedbacks(restored);
       draftReadyRef.current = true;
+      setCurrentView(sortedAlbum.length === 0 && sortedMerch.length > 0 ? 'merch' : 'album');
+    } else {
+      // 背景更新：頁數有變時，避免停在不存在的頁
+      setAlbumSpreadIndex(i => Math.min(i, Math.max(0, sortedAlbum.length - 1)));
+      setMerchIndex(i => Math.min(i, Math.max(0, sortedMerch.length - 1)));
+    }
 
-      if (sortedAlbum.length === 0 && sortedMerch.length > 0) {
-        setCurrentView('merch');
-      } else {
-        setCurrentView('album');
+    if (sortedAlbum.length === 0 && sortedMerch.length === 0) {
+      setError("此資料夾內目前沒有可校稿的圖片，請與我們聯繫。");
+    }
+    return { target: probe || sortedMerch[0] || null, raw: rawData };
+  };
+
+  // 背景確認圖片來源可用（用 64px 小圖測，幾乎不耗流量）；lh3 不通改用 Drive 縮圖
+  const verifyImageSource = async ({ target, raw }: { target: Photo | null; raw: Photo[] }) => {
+    if (!target || urlModeRef.current !== 'lh3') return;
+    if ((await loadImage(fastUrl(target.id, 64), 6000)) !== null) return;
+    if ((await loadImage(thumbUrl(target.id, 64), 6000)) !== null) {
+      urlModeRef.current = 'thumb';
+      const remap = (p: Photo): Photo => ({ ...p, url: thumbUrl(p.id), low: thumbUrl(p.id, LOW_SZ) });
+      setAlbumPhotos(list => list.map(remap));
+      setMerchPhotos(list => list.map(remap));
+      return;
+    }
+    // 最後備援：原始網址（較慢，但至少看得到）
+    if (target.url && (await loadImage(target.url, 8000)) !== null) {
+      urlModeRef.current = 'orig';
+      const origById: Record<string, string> = {};
+      raw.forEach(f => { origById[f.id] = f.url; });
+      const remap = (p: Photo): Photo => ({ ...p, url: origById[p.id] || p.url, low: undefined });
+      setAlbumPhotos(list => list.map(remap));
+      setMerchPhotos(list => list.map(remap));
+      return;
+    }
+    setError("照片無法顯示：請將校稿資料夾的共用設定改為「知道連結的任何人 → 檢視者」後重新整理。");
+  };
+
+  const fetchPhotos = async (id: string) => {
+    setLoading(true); setError("");
+    // ⚡ 第二次開啟：先用上次的清單秒開，背景再向雲端確認是否有更新
+    let cachedStr = "";
+    let usedCache = false;
+    const cachedRaw = safeStorage.get(LIST_CACHE_PREFIX + id);
+    if (cachedRaw) {
+      try {
+        const c = JSON.parse(cachedRaw);
+        if (c && Array.isArray(c.data) && Date.now() - c.t < 7 * 86400000) {
+          cachedStr = JSON.stringify(c.data);
+          const target = await applyList(c.data, id, { restoreDraft: true });
+          usedCache = true;
+          setLoading(false);
+          verifyImageSource(target);
+        }
+      } catch { /* ignore */ }
+    }
+    try {
+      const data = await fetchWithRetry(`${API_URL}?folderId=${id}`);
+
+      // 🔒 已送出鎖定
+      if (data && !Array.isArray(data) && data.locked) {
+        safeStorage.remove(DRAFT_PREFIX + id);
+        safeStorage.remove(LIST_CACHE_PREFIX + id);
+        setError("此校稿已完成送出 ✅ 如需再次調整，請透過 LINE 與我們聯繫，謝謝您！");
+        return;
       }
-
-      if (sortedAlbum.length === 0 && sortedMerch.length === 0) {
-        setError("此資料夾內目前沒有可校稿的圖片，請與我們聯繫。");
+      const str = JSON.stringify(data);
+      safeStorage.set(LIST_CACHE_PREFIX + id, JSON.stringify({ t: Date.now(), data }));
+      if (!usedCache) {
+        const target = await applyList(data, id, { restoreDraft: true });
+        verifyImageSource(target);
+      } else if (str !== cachedStr) {
+        await applyList(data, id, { restoreDraft: false });
       }
     } catch (err: any) {
-      setError(err?.message || "無法載入圖片。請確認您貼上的「資料夾網址」是否正確，且該資料夾已開放檢視權限。");
+      if (!usedCache) setError(err?.message || "無法載入圖片。請確認您貼上的「資料夾網址」是否正確，且該資料夾已開放檢視權限。");
     } finally {
       setLoading(false);
     }
@@ -1202,6 +1253,44 @@ function AppInner() {
     );
   }
 
+  // ⚡ V2.19：須知視窗在載入期間就先顯示（客人閱讀的同時，背景載入相冊）
+  const renderGate = () => (
+        <div className="modal-overlay">
+          <div className="final-modal-box">
+            <h2 className="brand-title">Copyright Notice<br/>著作權聲明</h2>
+
+            <div className="legal-content-wrapper">
+              <div className="legal-item">
+                <span className="legal-icon">📌</span>
+                <span className="legal-text">本系統顯示之畫面即為定稿印刷排版，請仔細確認照片位置與裁切範圍。</span>
+              </div>
+              <div className="legal-item">
+                <span className="legal-icon">🖨️</span>
+                <span className="legal-text">確認無誤並定稿後，將由印務工坊直接進入實體輸出製作，無法再行修改。</span>
+              </div>
+              <div className="legal-item">
+                <span className="legal-icon">📖</span>
+                <span className="legal-text">相冊畫面中央之深色陰影為模擬實體相冊翻閱之 3D 視覺效果，實際印刷成品為全景無縫平翻，不會產生此陰影，請您安心校稿。</span>
+              </div>
+              <div className="legal-item">
+                <span className="legal-icon">🔒</span>
+                <span className="legal-text">此為專屬機密校稿連結，為保障您的隱私，請妥善保管，勿將網址發布或分享至公開社群平台。</span>
+              </div>
+              <div className="legal-item">
+                <span className="legal-icon">📑</span>
+                <span className="legal-text"><strong>【快速翻頁】</strong>點選畫面下方「全部頁面」，可一次看到所有頁面縮圖，點一下即可跳到該頁，不必一頁一頁翻。</span>
+              </div>
+              <div className="legal-item">
+                <span className="legal-icon">💻</span>
+                <span className="legal-text"><strong>【最佳瀏覽建議】</strong>為確保您的審稿權益與成品準確性，建議您使用桌上型電腦、筆記型電腦或平板開啟此連結。手機等微型螢幕可能因畫面縮放導致排版壓縮、細節顯示不全，進而影響您的校稿判斷。</span>
+              </div>
+            </div>
+
+            <button className="btn-agree" onClick={() => setGatePassed(true)}>I Agree / 我同意並開始校稿</button>
+          </div>
+        </div>
+  );
+
   if (loading || error || dynamicAspectRatio === null || (albumPhotos.length === 0 && merchPhotos.length === 0)) {
     return (
       <React.Fragment>
@@ -1209,9 +1298,11 @@ function AppInner() {
         <div className="admin-viewport">
           <div className="admin-box" style={{ padding: '60px', boxShadow: 'none', border: 'none', background: 'transparent' }}>
             <h1 className="brand-logo-text" style={{ fontSize: '2rem' }}>辰妍國際</h1>
+            {!error && <div className="load-spinner" />}
             <p style={{ color: '#888', marginTop: '20px' }}>{error ? error : "正在為您精準載入相冊，請稍候..."}</p>
           </div>
         </div>
+        {!error && !gatePassed && renderGate()}
       </React.Fragment>
     );
   }
@@ -1266,7 +1357,7 @@ function AppInner() {
             <div className="cover-spine" />
             <div style={{
               width: "100%", height: "100%", backgroundColor: "#fff",
-              backgroundImage: `url(${photo.url})`,
+              backgroundImage: photo.low ? `url("${photo.url}"), url("${photo.low}")` : `url("${photo.url}")`,
               backgroundSize: "100% 100%",
               backgroundPosition: "center",
               backgroundRepeat: "no-repeat"
@@ -1280,7 +1371,7 @@ function AppInner() {
             <div className="shadow-right-edge" />
             <div style={{
               width: "100%", height: "100%", backgroundColor: "#fff",
-              backgroundImage: `url(${photo.url})`,
+              backgroundImage: photo.low ? `url("${photo.url}"), url("${photo.low}")` : `url("${photo.url}")`,
               backgroundSize: "100% 100%",
               backgroundPosition: "center",
               backgroundRepeat: "no-repeat"
@@ -1295,7 +1386,7 @@ function AppInner() {
         {pageIdx === 0 && <div className="cover-spine" />}
         {pageIdx !== 0 && side === "left" && <div className="shadow-right-edge" />}
         {pageIdx !== 0 && side === "right" && <div className="shadow-left-edge" />}
-        <div style={{ width: "100%", height: "100%", backgroundColor: "#fff", backgroundImage: `url(${photo.url})`, backgroundSize: "200% 100%", backgroundPosition: side === "left" ? "left center" : "right center", backgroundRepeat: "no-repeat" }} />
+        <div style={{ width: "100%", height: "100%", backgroundColor: "#fff", backgroundImage: photo.low ? `url("${photo.url}"), url("${photo.low}")` : `url("${photo.url}")`, backgroundSize: "200% 100%", backgroundPosition: side === "left" ? "left center" : "right center", backgroundRepeat: "no-repeat" }} />
       </>
     );
   };
@@ -1602,7 +1693,7 @@ function AppInner() {
                         aria-label={mp.name}
                         style={{
                           width: `min(100%, calc(${maxH}vh * ${trim.ratio}))`, aspectRatio: trim.ratio, maxHeight: 'none',
-                          backgroundImage: `url("${mp.url}")`, backgroundSize: trim.bgSize, backgroundPosition: trim.bgPos, backgroundRepeat: 'no-repeat',
+                          backgroundImage: mp.low ? `url("${mp.url}"), url("${mp.low}")` : `url("${mp.url}")`, backgroundSize: `${trim.bgSize}, ${trim.bgSize}`, backgroundPosition: `${trim.bgPos}, ${trim.bgPos}`, backgroundRepeat: 'no-repeat',
                           borderRadius: 2, boxShadow: '0 8px 25px rgba(0,0,0,0.15)',
                         }}
                       >
@@ -1623,6 +1714,7 @@ function AppInner() {
                       {gatePassed && <DrawLayer key={mp.id} strokes={drawings[mp.id] || []} active={drawMode} onAdd={addStroke(mp.id)} />}
                       <img
                         src={mp.url}
+                        style={mp.low ? { background: `url("${mp.low}") center / 100% 100% no-repeat` } : undefined}
                         alt={mp.name}
                         draggable="false"
                         onLoad={(e) => {
@@ -1727,42 +1819,7 @@ function AppInner() {
 
       </div>
 
-      {!gatePassed && (
-        <div className="modal-overlay">
-          <div className="final-modal-box">
-            <h2 className="brand-title">Copyright Notice<br/>著作權聲明</h2>
-
-            <div className="legal-content-wrapper">
-              <div className="legal-item">
-                <span className="legal-icon">📌</span>
-                <span className="legal-text">本系統顯示之畫面即為定稿印刷排版，請仔細確認照片位置與裁切範圍。</span>
-              </div>
-              <div className="legal-item">
-                <span className="legal-icon">🖨️</span>
-                <span className="legal-text">確認無誤並定稿後，將由印務工坊直接進入實體輸出製作，無法再行修改。</span>
-              </div>
-              <div className="legal-item">
-                <span className="legal-icon">📖</span>
-                <span className="legal-text">相冊畫面中央之深色陰影為模擬實體相冊翻閱之 3D 視覺效果，實際印刷成品為全景無縫平翻，不會產生此陰影，請您安心校稿。</span>
-              </div>
-              <div className="legal-item">
-                <span className="legal-icon">🔒</span>
-                <span className="legal-text">此為專屬機密校稿連結，為保障您的隱私，請妥善保管，勿將網址發布或分享至公開社群平台。</span>
-              </div>
-              <div className="legal-item">
-                <span className="legal-icon">📑</span>
-                <span className="legal-text"><strong>【快速翻頁】</strong>點選畫面下方「全部頁面」，可一次看到所有頁面縮圖，點一下即可跳到該頁，不必一頁一頁翻。</span>
-              </div>
-              <div className="legal-item">
-                <span className="legal-icon">💻</span>
-                <span className="legal-text"><strong>【最佳瀏覽建議】</strong>為確保您的審稿權益與成品準確性，建議您使用桌上型電腦、筆記型電腦或平板開啟此連結。手機等微型螢幕可能因畫面縮放導致排版壓縮、細節顯示不全，進而影響您的校稿判斷。</span>
-              </div>
-            </div>
-
-            <button className="btn-agree" onClick={() => setGatePassed(true)}>I Agree / 我同意並開始校稿</button>
-          </div>
-        </div>
-      )}
+      {!gatePassed && renderGate()}
 
       {toast && <div className="toast-msg">{toast}</div>}
 
@@ -1771,8 +1828,9 @@ function AppInner() {
         const fbA = allFeedbacks['album'] || {}, fbM = allFeedbacks['merch'] || {};
         const thumbOf = (p: Photo) => {
           const u = p.url || '';
-          if (u.includes('lh3.googleusercontent.com')) return u.replace(/=w\d+$/, '=w480');
-          if (u.includes('drive.google.com/thumbnail')) return u.replace(/sz=w\d+/, 'sz=w480');
+          if (p.low) return p.low;
+          if (u.includes('lh3.googleusercontent.com')) return u.replace(/=[ws]\d+$/, '=s480');
+          if (u.includes('drive.google.com/thumbnail')) return u.replace(/sz=[ws]\d+/, 'sz=s480');
           return u;
         };
         const items = [
