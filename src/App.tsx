@@ -4,10 +4,12 @@ import React, { useState, useEffect, useRef } from "react";
 const API_URL = "https://script.google.com/macros/s/AKfycbwvYeDb8KyJid5pxPqEn1S-8TtTnZRMPbrxxqzw4jaryUGd0HRuiRpjX_nxUcWfKv6gHw/exec";
 
 // ==========================================
-// ⚙️ 系統設定（V2）
+// ⚙️ 系統設定（V2.20）
 // ==========================================
+const APP_VERSION = "V2.20";
 const LINE_OA_ID = "@tinycktw";
 const DRAFT_PREFIX = "album-proof-draft-";
+const SEEN_SUFFIX = "_seen_id";                // V2.20：已看紀錄改以照片 ID 記錄
 const DRAFT_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 草稿保留 30 天
 const BACKUP_WAIT_MS = 8000;                   // 送出時等待雲端同步的上限
 const LINE_SUMMARY_LIMIT = 500;                // LINE 預填摘要字數上限（避免網址過長開不了）
@@ -24,12 +26,14 @@ const CROP_OUT = "-7px";
 // 檔名含「蠶絲膜／蠶絲」→ 照原樣顯示（不裁），裁切虛線在圖檔邊緣往內 4mm（不套下表）。
 // 由上往下比對，先符合者優先。
 // 比對前檔名會統一：去空白、轉小寫、× ＊ * → x
+// V2.20：A4 類（A4框直／A4框橫／A4框／A4無框畫）裁切線往外推 1mm → 3mm（依實際比對結果）
 // ==========================================
 const MERCH_DPI = 300; // 印刷檔解析度（mm → 像素換算用）
 const MERCH_SILK = /蠶絲/;
 const MERCH_SWAP_FRAME = /換照框/;
 const SWAP_FRAME_CROP_MM = 2; // V2.14：換照框＝左右兩框，各自內縮 2mm
 const SILK_CROP_MM = 4; // V2.11：蠶絲膜（含「蠶絲」簡寫）不論尺寸，照原樣顯示，裁切線＝圖檔邊緣往內 4mm
+const A4_CROP_MM = 3;   // V2.20：A4 類裁切線（原 4mm，往外推 1mm）
 type Mm4 = { top: number; bottom: number; left: number; right: number };
 const mmAll = (n: number): Mm4 => ({ top: n, bottom: n, left: n, right: n });
 const MERCH_TRIM_RULES: { name: string; match: RegExp; orient?: 'portrait' | 'landscape'; trimMm: Mm4; cropMm: number }[] = [
@@ -42,16 +46,18 @@ const MERCH_TRIM_RULES: { name: string; match: RegExp; orient?: 'portrait' | 'la
   { name: "60x90cm-70x100cm",         match: /60x90|70x100/,                     trimMm: mmAll(45), cropMm: 10 },
   { name: "30框",                     match: /(^|[^\d])30框/,                    trimMm: mmAll(50), cropMm: 4 },
   { name: "55框",                     match: /(^|[^\d])55框/,                    trimMm: mmAll(50), cropMm: 4 },
-  { name: "A4框直",                   match: /a4框直|a4直框/,                    trimMm: mmAll(48), cropMm: 4 },
-  { name: "A4框橫",                   match: /a4框橫|a4橫框/,                    trimMm: mmAll(52), cropMm: 4 },
+  { name: "A4框直",                   match: /a4框直|a4直框/,                    trimMm: mmAll(48), cropMm: A4_CROP_MM },
+  { name: "A4框橫",                   match: /a4框橫|a4橫框/,                    trimMm: mmAll(52), cropMm: A4_CROP_MM },
   { name: "4x6（不裁，裁切線內縮 4mm）",  match: /(^|[^\d])4x6(?!\d)/,               trimMm: mmAll(0),  cropMm: 4 },
   // ——— 檔名沒寫直／橫時，依照片方向自動判斷 ———
   { name: "16x24（未標直橫）→ 直",     match: /16x24|51x71/, orient: 'portrait',  trimMm: { top: 40, bottom: 40, left: 42, right: 42 }, cropMm: 10 },
   { name: "16x24（未標直橫）→ 橫",     match: /16x24|51x71/, orient: 'landscape', trimMm: { top: 42, bottom: 42, left: 40, right: 40 }, cropMm: 10 },
   // V2.8：只寫「40x60」「40x60框」（標準款）→ 套 40x60橫式 版型
   { name: "40x60（標準款）",          match: /40x60/,                            trimMm: mmAll(50), cropMm: 4 },
-  { name: "A4框（未標直橫）→ 直",      match: /a4框/, orient: 'portrait',  trimMm: mmAll(48), cropMm: 4 },
-  { name: "A4框（未標直橫）→ 橫",      match: /a4框/, orient: 'landscape', trimMm: mmAll(52), cropMm: 4 },
+  { name: "A4框（未標直橫）→ 直",      match: /a4框/, orient: 'portrait',  trimMm: mmAll(48), cropMm: A4_CROP_MM },
+  { name: "A4框（未標直橫）→ 橫",      match: /a4框/, orient: 'landscape', trimMm: mmAll(52), cropMm: A4_CROP_MM },
+  // V2.20：A4無框畫 → 包邊維持 48mm，裁切線往外推 1mm（4mm → 3mm）
+  { name: "A4無框畫（裁切線 3mm）",    match: /a4.*無框|無框.*a4/,                trimMm: mmAll(48), cropMm: A4_CROP_MM },
   // ——— 備援：表外的無框畫／數字框，沿用 48mm＋裁切線 4mm ———
   { name: "其他無框畫／數字框（備援）", match: /無框畫|\d+框|a\d框/,              trimMm: mmAll(48), cropMm: 4 },
 ];
@@ -104,6 +110,7 @@ const GLOBAL_STYLES = `
 
   .result-box { margin-top: 25px; padding: 20px; background: #F9FAFB; border: 1px solid #E5E9EA; border-left: 4px solid #187880; border-radius: 6px; animation: fadeIn 0.4s ease-out; }
   @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes fadeOnly { from { opacity: 0; } to { opacity: 1; } }
   .client-link-text { word-break: break-all; color: #187880; font-size: 0.95rem; font-weight: 500; background: #ffffff; padding: 12px; border-radius: 4px; margin-bottom: 15px; user-select: all; letter-spacing: 0.5px; border: 1px solid #E5E9EA; }
   .btn-copy { flex: 1; padding: 12px; background: #187880; color: white; border: none; border-radius: 4px; font-weight: 500; cursor: pointer; transition: 0.2s; }
   .btn-copy:hover { background: #136066; }
@@ -188,14 +195,17 @@ const GLOBAL_STYLES = `
   .crop-toggle-btn-inline:disabled { opacity: 0.35; cursor: not-allowed; }
   .toast-msg { position: fixed; top: 72px; left: 50%; transform: translateX(-50%); background: #e74c3c; color: #fff; padding: 11px 20px; border-radius: 22px; font-size: 0.9rem; font-weight: 600; z-index: 9000; box-shadow: 0 8px 25px rgba(231,76,60,0.35); width: max-content; max-width: 90vw; text-align: center; line-height: 1.4; animation: fadeIn 0.25s ease-out; }
 
-  /* V2.17：全部頁面提示 */
+  /* V2.17：全部頁面提示（V2.20：電腦版改放在按鈕左側，不再蓋到輸入框；手機版點輸入框即隱藏） */
   .ov-btn-wrap { position: relative; }
-  .ov-tip-bubble { position: absolute; bottom: calc(100% + 12px); right: 0; width: 250px; background: #187880; color: #fff; font-size: 0.8rem; line-height: 1.5; padding: 10px 28px 10px 12px; border-radius: 8px; box-shadow: 0 6px 18px rgba(0,0,0,0.18); cursor: pointer; z-index: 120; animation: fadeIn 0.4s ease-out; text-align: left; }
-  .ov-tip-bubble::after { content: ''; position: absolute; top: 100%; right: 40px; border: 7px solid transparent; border-top-color: #187880; }
+  .ov-tip-bubble { position: absolute; top: 50%; right: calc(100% + 14px); transform: translateY(-50%); width: 260px; background: #187880; color: #fff; font-size: 0.8rem; line-height: 1.5; padding: 10px 28px 10px 12px; border-radius: 8px; box-shadow: 0 6px 18px rgba(0,0,0,0.18); cursor: pointer; z-index: 120; animation: fadeOnly 0.4s ease-out; text-align: left; }
+  .ov-tip-bubble::after { content: ''; position: absolute; top: 50%; left: 100%; transform: translateY(-50%); border: 7px solid transparent; border-left-color: #187880; }
   .ov-tip-close { position: absolute; top: 4px; right: 6px; background: transparent; border: none; color: #fff; font-size: 0.85rem; cursor: pointer; opacity: 0.8; }
   .overview-btn.pulse { animation: ovPulse 1.6s ease-in-out infinite; }
   @keyframes ovPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(24,120,128,0.45); } 50% { box-shadow: 0 0 0 8px rgba(24,120,128,0); } }
-  @media (max-width: 768px) { .ov-tip-bubble { width: 220px; right: -60px; } .ov-tip-bubble::after { right: 100px; } }
+  @media (max-width: 768px) {
+    .ov-tip-bubble { top: auto; bottom: calc(100% + 12px); right: -60px; transform: none; width: 220px; }
+    .ov-tip-bubble::after { top: 100%; left: auto; right: 100px; transform: none; border-left-color: transparent; border-top-color: #187880; }
+  }
 
   /* V2.15：全螢幕看圖 */
   .merch-tool-row { padding-top: 0; }
@@ -485,7 +495,7 @@ function DrawLayer({ strokes, active, onAdd }: { strokes: Stroke[]; active: bool
 const loadCorsImage = (url: string) => new Promise<HTMLImageElement | null>(resolve => {
   const img = new Image();
   img.crossOrigin = "anonymous";
-  const t = setTimeout(() => resolve(null), 8000);
+  const t = setTimeout(() => resolve(null), 5000); // V2.20：8 秒 → 5 秒，縮短送出等待
   img.onload = () => { clearTimeout(t); resolve(img); };
   img.onerror = () => { clearTimeout(t); resolve(null); };
   img.src = url;
@@ -555,6 +565,35 @@ const safeStorage = {
   remove(key: string) { try { localStorage.removeItem(key); } catch { /* ignore */ } },
 };
 
+// ==========================================
+// 📊 V2.20 數據追蹤：送出時一併記錄到後台總表（客人端不需填寫任何欄位）
+// ==========================================
+const nowMs = () => Math.round(typeof performance !== "undefined" && performance.now ? performance.now() : 0);
+const detectEnv = () => {
+  const ua = (typeof navigator !== "undefined" && navigator.userAgent) || "";
+  const touchMac = /Macintosh/.test(ua) && ((typeof navigator !== "undefined" && navigator.maxTouchPoints) || 0) > 1;
+  const device = /iPhone|iPod/.test(ua) ? "手機(iOS)"
+    : (/iPad/.test(ua) || touchMac) ? "平板(iPad)"
+    : /Android/.test(ua) ? (/Mobile/.test(ua) ? "手機(Android)" : "平板(Android)")
+    : "電腦";
+  const browser = /\bLine\//i.test(ua) ? "LINE內建"
+    : /FBAN|FBAV|Instagram/i.test(ua) ? "FB/IG內建"
+    : /Edg\//.test(ua) ? "Edge"
+    : /Firefox|FxiOS/.test(ua) ? "Firefox"
+    : /CriOS|Chrome\//.test(ua) ? "Chrome"
+    : /Safari\//.test(ua) ? "Safari" : "其他";
+  // 網路類型：只有部分瀏覽器（主要是 Android Chrome）提供；iPhone 會是「未知」
+  const c: any = typeof navigator !== "undefined" ? (navigator as any).connection : null;
+  let network = "未知";
+  if (c) {
+    const kind = c.type === "wifi" ? "Wi-Fi" : c.type === "cellular" ? "行動網路" : "";
+    const speed = c.effectiveType ? String(c.effectiveType).toUpperCase() : "";
+    network = [kind, speed].filter(Boolean).join(" ") || "未知";
+  }
+  const screenSize = typeof window !== "undefined" && window.screen ? `${window.screen.width}x${window.screen.height}` : "";
+  return { device, browser, network, screen: screenSize };
+};
+
 function AppInner() {
   const [appMode, setAppMode] = useState<'admin' | 'viewer'>('admin');
   const [folderLink, setFolderLink] = useState("");
@@ -602,10 +641,13 @@ function AppInner() {
   const [overviewFilter, setOverviewFilter] = useState<'all' | 'unseen'>('all');
   // V2.17：「全部頁面」新手提示（點過一次就不再出現）
   const [ovTipDone, setOvTipDone] = useState(() => { try { return localStorage.getItem('album-ov-tip-done') === '1'; } catch { return false; } });
+  // V2.20：客人開始輸入修改建議時，先把提示泡泡收起來（避免蓋到輸入框）
+  const [ovTipHidden, setOvTipHidden] = useState(false);
   const openOverview = () => {
     setShowOverview(true);
     if (!ovTipDone) { setOvTipDone(true); safeStorage.set('album-ov-tip-done', '1'); }
   };
+  // V2.20：已看紀錄改以「照片 ID」為 key（原本用頁序，同資料夾增刪檔時會算錯）
   const [visited, setVisited] = useState<Record<string, boolean>>({});
   const [fsUi, setFsUi] = useState(true);
   const fsNativeRef = useRef(false);
@@ -613,6 +655,8 @@ function AppInner() {
   const [merchDims, setMerchDims] = useState<Record<string, { w: number; h: number }>>({});
   const submitRefRef = useRef<{ type: string; ref: string } | null>(null);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+  // V2.20：數據追蹤（時間皆為「開啟網頁後的毫秒數」）
+  const metricsRef = useRef<{ listMs?: number; firstImgMs?: number; gateMs?: number; cacheHit?: boolean; opens?: number; firstOpenAt?: number }>({});
 
   const albumRef = useRef<HTMLDivElement>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -627,6 +671,13 @@ function AppInner() {
       setAppMode('viewer');
       setAlbumName(nameFromUrl || "校稿預覽");
       setFolderId(idFromUrl);
+      // V2.20：記錄開啟次數與第一次開啟時間（用來計算「從收到連結到送出」花多久）
+      const opens = (parseInt(safeStorage.get('album-opens-' + idFromUrl) || '0', 10) || 0) + 1;
+      safeStorage.set('album-opens-' + idFromUrl, String(opens));
+      let firstOpenAt = parseInt(safeStorage.get('album-first-' + idFromUrl) || '', 10);
+      if (!firstOpenAt) { firstOpenAt = Date.now(); safeStorage.set('album-first-' + idFromUrl, String(firstOpenAt)); }
+      metricsRef.current.opens = opens;
+      metricsRef.current.firstOpenAt = firstOpenAt;
       fetchPhotos(idFromUrl);
       // V2.8：新連結不帶案號 → 以雲端資料夾名稱為案號（舊連結仍沿用網址上的 name）
       if (!nameFromUrl) {
@@ -812,6 +863,14 @@ function AppInner() {
     setMerchPhotos(sortedMerch.map(mapUrl));
 
     if (opts.restoreDraft) {
+      // V2.20：記錄「清單就緒」與「第一頁圖片顯示」的時間
+      const m = metricsRef.current;
+      if (m.listMs === undefined) m.listMs = nowMs();
+      const first = sortedAlbum[0] || sortedMerch[0];
+      if (first && m.firstImgMs === undefined) {
+        const fm = mapUrl(first);
+        loadImage(fm.low || fm.url, 20000).then(r => { if (r !== null && metricsRef.current.firstImgMs === undefined) metricsRef.current.firstImgMs = nowMs(); });
+      }
       setAlbumSpreadIndex(0);
       setMerchIndex(0);
       let restored: Record<string, Record<string, string>> = {};
@@ -873,6 +932,7 @@ function AppInner() {
         const c = JSON.parse(cachedRaw);
         if (c && Array.isArray(c.data) && Date.now() - c.t < 7 * 86400000) {
           cachedStr = JSON.stringify(c.data);
+          metricsRef.current.cacheHit = true;
           const target = await applyList(c.data, id, { restoreDraft: true });
           usedCache = true;
           setLoading(false);
@@ -886,6 +946,7 @@ function AppInner() {
       // 🔒 已送出鎖定
       if (data && !Array.isArray(data) && data.locked) {
         safeStorage.remove(DRAFT_PREFIX + id);
+        safeStorage.remove(DRAFT_PREFIX + id + SEEN_SUFFIX);
         safeStorage.remove(LIST_CACHE_PREFIX + id);
         setError("此校稿已完成送出 ✅ 如需再次調整，請透過 LINE 與我們聯繫，謝謝您！");
         return;
@@ -922,8 +983,8 @@ function AppInner() {
   const totalItems = albumPhotos.length + merchPhotos.length;
   const currentPos = currentView === 'album' ? albumSpreadIndex : albumPhotos.length + merchIndex;
   // V2.16：改為「還沒看過的頁數」— 可從總覽直接跳頁，但每頁都要看過才能送出
-  const posKey = (view: 'album' | 'merch', idx: number) => `${view === 'album' ? 'a' : 'm'}${idx}`;
-  const allKeys = [...albumPhotos.map((_, i) => posKey('album', i)), ...merchPhotos.map((_, i) => posKey('merch', i))];
+  // V2.20：以照片 ID 判斷是否看過（不受檔案增刪、排序改變影響）
+  const allKeys = [...albumPhotos.map(p => p.id), ...merchPhotos.map(p => p.id)];
   const unseenKeys = allKeys.filter(k => !visited[k]);
   const remainingItems = unseenKeys.length;
   const jumpTo = (view: 'album' | 'merch', idx: number) => {
@@ -933,9 +994,10 @@ function AppInner() {
     setShowOverview(false);
   };
   const jumpToFirstUnseen = () => {
-    const k = unseenKeys[0];
-    if (!k) return;
-    jumpTo(k[0] === 'a' ? 'album' : 'merch', Number(k.slice(1)));
+    const ai = albumPhotos.findIndex(p => !visited[p.id]);
+    if (ai !== -1) { jumpTo('album', ai); return; }
+    const mi = merchPhotos.findIndex(p => !visited[p.id]);
+    if (mi !== -1) jumpTo('merch', mi);
   };
   // V2.18：畫筆必附文字（同精修）
   const fbText = (id: string) => ((allFeedbacks['album'] || {})[id] || (allFeedbacks['merch'] || {})[id] || '').trim();
@@ -953,19 +1015,21 @@ function AppInner() {
     }
   };
   useEffect(() => { setDrawMode(false); }, [currentView, albumSpreadIndex, merchIndex]);
-  // 目前這頁標記為已看（記在本機，重新整理不會重算）
+  // 目前這頁標記為已看（以照片 ID 記在本機，重新整理不會重算）
   useEffect(() => {
     if (!gatePassed || totalItems === 0) return;
-    const k = posKey(currentView, currentView === 'album' ? albumSpreadIndex : merchIndex);
-    setVisited(v => (v[k] ? v : { ...v, [k]: true }));
-  }, [gatePassed, currentView, albumSpreadIndex, merchIndex, totalItems]);
+    const p = currentView === 'album' ? albumPhotos[albumSpreadIndex] : merchPhotos[merchIndex];
+    if (!p) return;
+    setVisited(v => (v[p.id] ? v : { ...v, [p.id]: true }));
+  }, [gatePassed, currentView, albumSpreadIndex, merchIndex, totalItems, albumPhotos, merchPhotos]);
   useEffect(() => {
     if (!folderId) return;
-    try { const raw = localStorage.getItem(DRAFT_PREFIX + folderId + '_seen'); if (raw) setVisited(JSON.parse(raw) || {}); } catch { /* ignore */ }
+    safeStorage.remove(DRAFT_PREFIX + folderId + '_seen'); // 清掉 V2.19 以前以頁序記錄的舊資料
+    try { const raw = localStorage.getItem(DRAFT_PREFIX + folderId + SEEN_SUFFIX); if (raw) setVisited(JSON.parse(raw) || {}); } catch { /* ignore */ }
   }, [folderId]);
   useEffect(() => {
     if (!folderId || !Object.keys(visited).length) return;
-    safeStorage.set(DRAFT_PREFIX + folderId + '_seen', JSON.stringify(visited));
+    safeStorage.set(DRAFT_PREFIX + folderId + SEEN_SUFFIX, JSON.stringify(visited));
   }, [visited, folderId]);
 
   const goPrevMerch = () => {
@@ -1109,26 +1173,54 @@ function AppInner() {
     try { return { image: c.toDataURL('image/jpeg', 0.82), w: W, h: H }; } catch { return null; }
   };
 
-  // ☁️ 雲端備份：存到該案資料夾內「校稿回覆」（JSON＋TXT＋PDF）並自動鎖定連結
+  // 📊 V2.20：送出時附上的追蹤數據
+  const buildMetrics = (annotFail: number) => {
+    const m = metricsRef.current;
+    const waitMs = m.gateMs !== undefined && m.firstImgMs !== undefined ? Math.max(0, m.firstImgMs - m.gateMs) : undefined;
+    return {
+      ...detectEnv(),
+      listMs: m.listMs, firstImgMs: m.firstImgMs, gateMs: m.gateMs, waitMs,
+      sessionMs: nowMs(),
+      sinceFirstMs: m.firstOpenAt ? Date.now() - m.firstOpenAt : undefined,
+      opens: m.opens, cacheHit: !!m.cacheHit, annotFail,
+    };
+  };
+
+  // ☁️ V2.20：第二段 — 通知雲端在背景產生 PDF 需求單（客人已經跳去 LINE 也會繼續完成）
+  const requestPdf = (ref: string, status: string) => {
+    const body = JSON.stringify({ action: 'pdf', folderId, ref, status });
+    try {
+      if (navigator.sendBeacon && navigator.sendBeacon(API_URL, new Blob([body], { type: 'text/plain;charset=utf-8' }))) return;
+    } catch { /* fallback */ }
+    try { fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body, keepalive: true }).catch(() => { /* ignore */ }); } catch { /* ignore */ }
+  };
+
+  // ☁️ 雲端備份：存到該案資料夾內「校稿回覆」（JSON＋TXT＋標註圖）、寫總表並自動鎖定連結；PDF 改背景產生
   const backupToCloud = async (type: "approve" | "feedback", ref: string, summary: string, beacon = false) => {
     const fb = collectFeedbackItems();
+    let annotFail = 0;
     const withImg = async (list: typeof fb.album) => Promise.all(list.map(async it => {
       const a = beacon ? null : await renderAnnotated(it);
+      if (!beacon && it.strokes.length && !a) annotFail++;
       const { idx, ...rest } = it;
       return { ...rest, strokeCount: it.strokes.length, ...(a || {}) };
     }));
     const album = await withImg(fb.album), merch = await withImg(fb.merch);
+    const status = type === 'approve' ? 'approved' : 'feedback';
     const payload = {
       action: 'submit',
+      asyncPdf: true,          // V2.20：PDF 改由第二段背景產生（舊版 Apps Script 會忽略此欄、照舊當場產生）
+      appVersion: APP_VERSION,
       folderId,
       caseName: albumName,
       ref,
-      status: type === 'approve' ? 'approved' : 'feedback',
+      status,
       submittedAt: new Date().toISOString(),
       totalAlbum: albumPhotos.length,
       totalMerch: merchPhotos.length,
       items: [...album, ...merch],
       summary,
+      metrics: buildMetrics(annotFail),
       userAgent: navigator.userAgent,
     };
     // 無修改：用 sendBeacon 背景送出（不等待，立即開 LINE）
@@ -1138,17 +1230,20 @@ function AppInner() {
     }
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), BACKUP_WAIT_MS);
+    let ok = false;
     try {
       // text/plain 可避免 CORS 預檢，Apps Script 照常收到 JSON
       const res = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload), signal: ctrl.signal });
       const json = JSON.parse(await res.text());
-      return !!json.ok;
+      ok = !!json.ok;
     } catch (err) {
       console.warn("Cloud backup failed", err);
-      return false;
     } finally {
       clearTimeout(timer);
     }
+    // 有修改項目 → 不論第一段是否在 8 秒內回應，都請雲端產生 PDF（雲端會等第一段寫完才做）
+    if (payload.items.length) requestPdf(ref, status);
+    return ok;
   };
 
   // 👑 LINE 串接：先複製 → 同步雲端（最多等 8 秒）→ 跳轉 LINE
@@ -1286,7 +1381,7 @@ function AppInner() {
               </div>
             </div>
 
-            <button className="btn-agree" onClick={() => setGatePassed(true)}>I Agree / 我同意並開始校稿</button>
+            <button className="btn-agree" onClick={() => { if (metricsRef.current.gateMs === undefined) metricsRef.current.gateMs = nowMs(); setGatePassed(true); }}>I Agree / 我同意並開始校稿</button>
           </div>
         </div>
   );
@@ -1786,7 +1881,7 @@ function AppInner() {
                     placeholder={fid && needsText(fid) ? '⚠️ 您已在畫面上標註，請說明要修改的內容（必填）' : '請輸入修改建議...（若無須修改請留白，換頁會自動存檔）'}
                     value={(allFeedbacks[currentView] || {})[fid || ''] || ''}
                     onChange={(e) => fid && handleFeedbackChange(fid, e.target.value)}
-                    onFocus={() => setDrawMode(false)}
+                    onFocus={() => { setDrawMode(false); setOvTipHidden(true); }}
                     onBlur={triggerSaveIndicator}
                   />
                 </div>
@@ -1799,7 +1894,7 @@ function AppInner() {
                {remainingItems > 0 ? `還有 ${remainingItems} 頁未看` : '✓ 已看完全部內容'}
              </div>
              <div className="ov-btn-wrap">
-               {gatePassed && !ovTipDone && totalItems > 3 && (
+               {gatePassed && !ovTipDone && !ovTipHidden && totalItems > 3 && (
                  <div className="ov-tip-bubble" onClick={openOverview}>
                    💡 頁數多？點「全部頁面」可看所有縮圖，直接跳到想看的頁
                    <button className="ov-tip-close" onClick={(e) => { e.stopPropagation(); setOvTipDone(true); safeStorage.set('album-ov-tip-done', '1'); }} aria-label="知道了">✕</button>
@@ -1836,7 +1931,7 @@ function AppInner() {
         const items = [
           ...albumPhotos.map((p, i) => ({ view: 'album' as const, i, p, label: getAlbumIndicatorLabel(i), hasFb: !!(fbA[p.id] || '').trim() || !!(drawings[p.id] || []).length })),
           ...merchPhotos.map((p, i) => ({ view: 'merch' as const, i, p, label: p.name.replace(/\.[^.]+$/, ''), hasFb: !!(fbM[p.id] || '').trim() || !!(drawings[p.id] || []).length })),
-        ].filter(it => overviewFilter === 'all' ? true : !visited[posKey(it.view, it.i)]);
+        ].filter(it => overviewFilter === 'all' ? true : !visited[it.p.id]);
         const renderGroup = (view: 'album' | 'merch', title: string) => {
           const list = items.filter(it => it.view === view);
           if (!list.length) return null;
@@ -1846,7 +1941,7 @@ function AppInner() {
               <div className={`ov-grid ${view === 'album' ? 'ov-album' : 'ov-merch'}`}>
                 {list.map(it => {
                   const isCur = currentView === it.view && (it.view === 'album' ? albumSpreadIndex : merchIndex) === it.i;
-                  const seen = !!visited[posKey(it.view, it.i)];
+                  const seen = !!visited[it.p.id];
                   return (
                     <button key={it.view + it.i} className={`ov-card ${isCur ? 'current' : ''}`} onClick={() => jumpTo(it.view, it.i)}>
                       <div className="ov-thumb" style={view === 'album' ? { aspectRatio: dynamicAspectRatio || 2 } : undefined}>
