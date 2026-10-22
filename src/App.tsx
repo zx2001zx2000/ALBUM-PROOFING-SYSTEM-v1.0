@@ -6,7 +6,8 @@ const API_URL = "https://script.google.com/macros/s/AKfycbwvYeDb8KyJid5pxPqEn1S-
 // ==========================================
 // ⚙️ 系統設定（V2.20）
 // ==========================================
-const APP_VERSION = "V2.20";
+const APP_VERSION = "V2.21";
+const RATIO_TOLERANCE = 0.015; // V2.21：版面比例與實際圖片差超過 1.5% 就以實際圖片為準
 const LINE_OA_ID = "@tinycktw";
 const DRAFT_PREFIX = "album-proof-draft-";
 const SEEN_SUFFIX = "_seen_id";                // V2.20：已看紀錄改以照片 ID 記錄
@@ -656,7 +657,9 @@ function AppInner() {
   const submitRefRef = useRef<{ type: string; ref: string } | null>(null);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
   // V2.20：數據追蹤（時間皆為「開啟網頁後的毫秒數」）
-  const metricsRef = useRef<{ listMs?: number; firstImgMs?: number; gateMs?: number; cacheHit?: boolean; opens?: number; firstOpenAt?: number }>({});
+  const metricsRef = useRef<{ listMs?: number; firstImgMs?: number; gateMs?: number; cacheHit?: boolean; opens?: number; firstOpenAt?: number; ratioFixed?: boolean }>({});
+  // V2.21：決定版面比例的那一頁（第一張跨頁）
+  const probeRef = useRef<{ id: string; raw: string; isSpread: boolean } | null>(null);
 
   const albumRef = useRef<HTMLDivElement>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -842,14 +845,16 @@ function AppInner() {
     const sortedAlbum = filteredAlbum.sort((a, b) => (getWeight(a.name) - getWeight(b.name)) || naturalCompare(a.name, b.name));
     const sortedMerch = filteredMerch.sort((a, b) => naturalCompare(a.name, b.name));
 
-    // 版面比例：優先用 Apps Script 回傳的原始寬高（不必先下載大圖）；沒有才載低解析圖量測
+    // 版面比例：先用 Apps Script 回傳的寬高快速顯示；之後一律以「瀏覽器實際載入的圖片」校正（V2.21）
     const probe = sortedAlbum.find((p, idx) => !checkIsSinglePage(p, idx, sortedAlbum.length)) || sortedAlbum[0] || null;
     if (probe) {
       let ratio: number | null = probe.w && probe.h ? probe.w / probe.h : null;
       if (ratio === null) ratio = (await loadImage(fastUrl(probe.id, LOW_SZ), 5000)) ?? (await loadImage(thumbUrl(probe.id, LOW_SZ), 5000));
       const isSpread = !checkIsSinglePage(probe, sortedAlbum.indexOf(probe), sortedAlbum.length);
+      probeRef.current = { id: probe.id, raw: probe.url, isSpread };
       setDynamicAspectRatio(isSpread ? (ratio ?? 2) : (ratio ?? 1) * 2);
     } else {
+      probeRef.current = null;
       setDynamicAspectRatio(2);
     }
 
@@ -921,6 +926,29 @@ function AppInner() {
     setError("照片無法顯示：請將校稿資料夾的共用設定改為「知道連結的任何人 → 檢視者」後重新整理。");
   };
 
+  // 📐 V2.21：以「瀏覽器實際顯示的圖片」量比例，校正整本相冊版面。
+  //   雲端記錄的寬高可能不準（例如 Photoshop 沿用原始照片的 EXIF 尺寸／方向、Google 尚未處理完大檔），
+  //   瀏覽器實際載入的圖片＝客人看到的畫面，以它為準最可靠。
+  const refineAlbumRatio = async () => {
+    const pr = probeRef.current;
+    if (!pr) return;
+    const mode = urlModeRef.current;
+    const url = mode === 'orig' ? pr.raw : mode === 'thumb' ? thumbUrl(pr.id, LOW_SZ) : fastUrl(pr.id, LOW_SZ);
+    const r = await loadImage(url, 15000);
+    if (r === null || !probeRef.current || probeRef.current.id !== pr.id) return;
+    const actual = pr.isSpread ? r : r * 2;
+    setDynamicAspectRatio(cur => {
+      if (cur && Math.abs(cur - actual) / actual < RATIO_TOLERANCE) return cur;
+      console.warn(`[相冊比例校正] 雲端記錄 ${cur?.toFixed(3)} → 實際 ${actual.toFixed(3)}`);
+      metricsRef.current.ratioFixed = true;
+      return actual;
+    });
+  };
+  const verifyAndRefine = async (t: { target: Photo | null; raw: Photo[] }) => {
+    await verifyImageSource(t);
+    refineAlbumRatio();
+  };
+
   const fetchPhotos = async (id: string) => {
     setLoading(true); setError("");
     // ⚡ 第二次開啟：先用上次的清單秒開，背景再向雲端確認是否有更新
@@ -936,7 +964,7 @@ function AppInner() {
           const target = await applyList(c.data, id, { restoreDraft: true });
           usedCache = true;
           setLoading(false);
-          verifyImageSource(target);
+          verifyAndRefine(target);
         }
       } catch { /* ignore */ }
     }
@@ -955,9 +983,10 @@ function AppInner() {
       safeStorage.set(LIST_CACHE_PREFIX + id, JSON.stringify({ t: Date.now(), data }));
       if (!usedCache) {
         const target = await applyList(data, id, { restoreDraft: true });
-        verifyImageSource(target);
+        verifyAndRefine(target);
       } else if (str !== cachedStr) {
         await applyList(data, id, { restoreDraft: false });
+        refineAlbumRatio();
       }
     } catch (err: any) {
       if (!usedCache) setError(err?.message || "無法載入圖片。請確認您貼上的「資料夾網址」是否正確，且該資料夾已開放檢視權限。");
@@ -1182,7 +1211,7 @@ function AppInner() {
       listMs: m.listMs, firstImgMs: m.firstImgMs, gateMs: m.gateMs, waitMs,
       sessionMs: nowMs(),
       sinceFirstMs: m.firstOpenAt ? Date.now() - m.firstOpenAt : undefined,
-      opens: m.opens, cacheHit: !!m.cacheHit, annotFail,
+      opens: m.opens, cacheHit: !!m.cacheHit, annotFail, ratioFixed: !!m.ratioFixed,
     };
   };
 
@@ -1453,7 +1482,7 @@ function AppInner() {
             <div style={{
               width: "100%", height: "100%", backgroundColor: "#fff",
               backgroundImage: photo.low ? `url("${photo.url}"), url("${photo.low}")` : `url("${photo.url}")`,
-              backgroundSize: "100% 100%",
+              backgroundSize: "contain", // V2.21：單頁封面／封底保持自己的比例，不拉伸
               backgroundPosition: "center",
               backgroundRepeat: "no-repeat"
             }} />
@@ -1467,7 +1496,7 @@ function AppInner() {
             <div style={{
               width: "100%", height: "100%", backgroundColor: "#fff",
               backgroundImage: photo.low ? `url("${photo.url}"), url("${photo.low}")` : `url("${photo.url}")`,
-              backgroundSize: "100% 100%",
+              backgroundSize: "contain", // V2.21：單頁封面／封底保持自己的比例，不拉伸
               backgroundPosition: "center",
               backgroundRepeat: "no-repeat"
             }} />
