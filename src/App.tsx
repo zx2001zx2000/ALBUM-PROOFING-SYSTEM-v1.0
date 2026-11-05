@@ -6,9 +6,17 @@ const API_URL = "https://script.google.com/macros/s/AKfycbwvYeDb8KyJid5pxPqEn1S-
 // ==========================================
 // ⚙️ 系統設定（V2.20）
 // ==========================================
-const APP_VERSION = "V2.21";
+const APP_VERSION = "V2.23";
 const RATIO_TOLERANCE = 0.015; // V2.21：版面比例與實際圖片差超過 1.5% 就以實際圖片為準
-const LINE_OA_ID = "@tinycktw";
+// 🏷️ V2.22：多品牌 — 每條校稿連結帶 b=品牌代碼，送出時開啟該品牌的 LINE 官方帳號
+//   新增品牌只要在這裡加一行；舊連結（沒有 b=）一律視為小詩琦
+const BRANDS = {
+  tinyck: { label: "小詩琦", lineId: "@tinycktw", display: "辰妍國際" },
+  cappi:  { label: "Cappi 寵物", lineId: "@cappi",    display: "Cappi" },
+} as const;
+type BrandKey = keyof typeof BRANDS;
+const DEFAULT_BRAND: BrandKey = "tinyck";
+const toBrand = (v: string | null): BrandKey => (v && v in BRANDS ? (v as BrandKey) : DEFAULT_BRAND);
 const DRAFT_PREFIX = "album-proof-draft-";
 const SEEN_SUFFIX = "_seen_id";                // V2.20：已看紀錄改以照片 ID 記錄
 const DRAFT_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 草稿保留 30 天
@@ -107,6 +115,19 @@ const GLOBAL_STYLES = `
   .link-help { margin-top: 10px; background: #F4F7F6; border-left: 3px solid #187880; border-radius: 4px; padding: 10px 12px; font-size: 0.85rem; color: #555; line-height: 1.6; text-align: left; }
   .link-help-target { color: #fff; background: #187880; padding: 1px 8px; border-radius: 10px; font-weight: 700; }
   .link-help code { background: #fff; border: 1px solid #ddd; border-radius: 3px; padding: 0 4px; font-size: 0.78rem; }
+  /* V2.23：傳給客人前的資料夾檢查 */
+  .check-box { margin-bottom: 15px; padding: 10px 12px; border-radius: 6px; font-size: 0.85rem; line-height: 1.7; text-align: left; background: #F4F7F6; color: #555; border: 1px solid #E5E9EA; }
+  .check-box.ok { background: #eef8f2; border-color: #b9e2c8; color: #1e6b3a; }
+  .check-box.warn { background: #fff8e6; border-color: #f0d48a; color: #8a5a00; }
+  .check-again { margin-top: 6px; padding: 4px 12px; background: #fff; border: 1px solid currentColor; color: inherit; border-radius: 14px; font-size: 0.8rem; cursor: pointer; }
+  /* V2.22：品牌選擇 */
+  .brand-pick { display: flex; gap: 10px; }
+  .brand-pick-btn { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 12px 8px; background: #FAFAFA; border: 2px solid #DDD; border-radius: 8px; cursor: pointer; color: #555; transition: 0.2s; }
+  .brand-pick-btn b { font-size: 1rem; }
+  .brand-pick-btn span { font-size: 0.75rem; color: #999; }
+  .brand-pick-btn:hover { border-color: #187880; }
+  .brand-pick-btn.on { border-color: #187880; background: rgba(24,120,128,0.08); color: #187880; }
+  .brand-pick-btn.on span { color: #187880; }
   .link-error { margin-top: 8px; color: #c0392b; font-size: 0.85rem; font-weight: 600; text-align: left; }
 
   .result-box { margin-top: 25px; padding: 20px; background: #F9FAFB; border: 1px solid #E5E9EA; border-left: 4px solid #187880; border-radius: 6px; animation: fadeIn 0.4s ease-out; }
@@ -437,7 +458,7 @@ const GLOBAL_STYLES = `
   }
 `;
 
-interface Photo { id: string; name: string; url: string; low?: string; mimeType?: string; w?: number; h?: number; }
+interface Photo { id: string; name: string; url: string; low?: string; mimeType?: string; w?: number; h?: number; t?: number; }
 
 // ==========================================
 // ✍️ V2.18 畫筆標註（同精修校稿）：座標以 0–1 比例儲存，不受畫面大小影響
@@ -520,6 +541,47 @@ const LOW_SZ = 480;   // 先顯示的低解析預覽（約 30KB，秒開）
 const fastUrl = (id: string, sz = VIEW_SZ) => `https://lh3.googleusercontent.com/d/${id}=s${sz}`;
 const thumbUrl = (id: string, sz = VIEW_SZ) => `https://drive.google.com/thumbnail?id=${id}&sz=s${sz}`;
 const LIST_CACHE_PREFIX = "album-list-v1-";
+
+// ==========================================
+// 📂 V2.23：清單分類（相冊／框畫）＋上傳狀態檢查（後台檢查與客人端共用）
+// ==========================================
+const UNSTABLE_MS = 10 * 60 * 1000; // 最新檔案 10 分鐘內上傳 → 視為「可能還在上傳中」
+const RECHECK_MS = 30 * 1000;       // 客人端：上傳中時每 30 秒自動補頁
+const RECHECK_MAX = 12;             // 最多自動補 12 次（約 6 分鐘）
+const albumWeight = (filename = "") => {
+  const n = filename.toLowerCase();
+  if (n.includes("封面") || n.startsWith("000")) return -999999;
+  if (n.includes("封底")) return 999999;
+  const match = filename.match(/_(\d+)/);
+  return (match && match[1]) ? parseInt(match[1], 10) : 0;
+};
+const classifyPhotos = (data: Photo[]) => {
+  const rawData: Photo[] = (Array.isArray(data) ? data : []).filter(isImageFile);
+  const filteredAlbum: Photo[] = [];
+  const filteredMerch: Photo[] = [];
+  rawData.forEach(file => {
+    const n = normalizeMerchName(file.name);
+    // V2.9：相冊公版檔名一律含「相冊」，封面／封底含「封面」「封底」→ 歸相冊；其餘符合條件者歸框畫
+    const albumGuard = /相冊|相本|跨頁|封面|封底/.test(n);
+    const isMerch = !albumGuard && (/框|畫|卡|海報|桌曆|周邊|簽名|小物|相紙|蠶絲|\d+x\d+/.test(n) || !!getMerchTrimRule(n));
+    const isAlbumCover = (n.includes("封面") || n.includes("封底")) && !isMerch;
+    if (isMerch && !isAlbumCover) filteredMerch.push(file); else filteredAlbum.push(file);
+  });
+  const sortedAlbum = filteredAlbum.sort((a, b) => (albumWeight(a.name) - albumWeight(b.name)) || naturalCompare(a.name, b.name));
+  const sortedMerch = filteredMerch.sort((a, b) => naturalCompare(a.name, b.name));
+  return { rawData, sortedAlbum, sortedMerch };
+};
+// 上傳中判斷：剛上傳的檔案，或 Google 還沒處理完（沒有寬高）的圖片
+const isPending = (f: Photo) => (!!f.t && Date.now() - f.t < UNSTABLE_MS) || (!f.w && /^image\/(jpe?g|png|webp)$/i.test(f.mimeType || ""));
+const isListUnstable = (data: any) => Array.isArray(data) && data.filter(isImageFile).some(isPending);
+// 跨頁編號缺號（例如有 _01～_08 但沒有 _05）
+const findPageGaps = (album: Photo[]) => {
+  const nums = album.map(p => albumWeight(p.name)).filter(n => n > 0 && n < 999999);
+  if (!nums.length) return [] as number[];
+  const set = new Set(nums), max = Math.max(...nums), gaps: number[] = [];
+  for (let i = 1; i <= max; i++) if (!set.has(i)) gaps.push(i);
+  return gaps;
+};
 // 提前和 Google 伺服器建立連線（省下約 0.3–1 秒）
 if (typeof document !== "undefined") {
   ["https://lh3.googleusercontent.com", "https://script.google.com", "https://script.googleusercontent.com", "https://drive.google.com"].forEach(h => {
@@ -601,6 +663,10 @@ function AppInner() {
   const [linkError, setLinkError] = useState("");
   const [generatedLink, setGeneratedLink] = useState("");
   const [isCopied, setIsCopied] = useState(false);
+  // V2.22：後台必須先選品牌；客人端由網址 b= 決定
+  const [adminBrand, setAdminBrand] = useState<BrandKey | null>(null);
+  const [brand, setBrand] = useState<BrandKey>(DEFAULT_BRAND);
+  const BR = BRANDS[brand];
   const [currentView, setCurrentView] = useState<'album' | 'merch'>('album');
   const [albumName, setAlbumName] = useState("");
   const [folderId, setFolderId] = useState("");
@@ -660,6 +726,13 @@ function AppInner() {
   const metricsRef = useRef<{ listMs?: number; firstImgMs?: number; gateMs?: number; cacheHit?: boolean; opens?: number; firstOpenAt?: number; ratioFixed?: boolean }>({});
   // V2.21：決定版面比例的那一頁（第一張跨頁）
   const probeRef = useRef<{ id: string; raw: string; isSpread: boolean } | null>(null);
+  // V2.23：上傳中自動補頁
+  const listUnstableRef = useRef(false);
+  const recheckCountRef = useRef(0);
+  const lastListStrRef = useRef("");
+  const countRef = useRef(0);
+  // V2.23：後台「傳給客人前」檢查
+  const [check, setCheck] = useState<null | { loading: boolean; error?: string; name?: string; album?: number; merch?: number; gaps?: number[]; pending?: number; newestMin?: number; locked?: boolean }>(null);
 
   const albumRef = useRef<HTMLDivElement>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -672,6 +745,7 @@ function AppInner() {
 
     if (idFromUrl) {
       setAppMode('viewer');
+      setBrand(toBrand(params.get("b")));
       setAlbumName(nameFromUrl || "校稿預覽");
       setFolderId(idFromUrl);
       // V2.20：記錄開啟次數與第一次開啟時間（用來計算「從收到連結到送出」花多久）
@@ -757,6 +831,7 @@ function AppInner() {
     e.preventDefault();
     if (!folderLink.trim()) return;
     setLinkError("");
+    if (!adminBrand) { setLinkError("請先選擇品牌（決定客人送出後開啟哪個 LINE 官方帳號）。"); setGeneratedLink(""); return; }
     // V2.8：防呆 — 貼到單一照片連結時提醒改貼資料夾
     if (/\/file\/d\//.test(folderLink)) {
       setLinkError("這是「單一照片」的連結，請改貼「資料夾」的網址（網址中會有 /folders/）。");
@@ -770,13 +845,37 @@ function AppInner() {
       return;
     }
     // 案號自動使用雲端資料夾名稱；openExternalBrowser=1 讓 LINE 點開時改用手機預設瀏覽器
-    const directLink = `${window.location.origin}${window.location.pathname}?id=${targetId}&openExternalBrowser=1`;
+    const directLink = `${window.location.origin}${window.location.pathname}?id=${targetId}&b=${adminBrand}&openExternalBrowser=1`;
     setGeneratedLink(directLink);
     setIsCopied(false);
+    runCheck(targetId);
+  };
+
+  // 🔍 V2.23：產生連結後自動檢查資料夾（頁數、缺號、是否還在上傳），確認無誤再傳給客人
+  const runCheck = async (targetId: string) => {
+    setCheck({ loading: true });
+    try {
+      const [data, info] = await Promise.all([
+        fetchWithRetry(`${API_URL}?folderId=${targetId}&fresh=1`, 1),
+        fetch(`${API_URL}?info=${encodeURIComponent(targetId)}`).then(r => r.json()).catch(() => null),
+      ]);
+      if (data && !Array.isArray(data) && data.locked) { setCheck({ loading: false, locked: true, name: info?.name }); return; }
+      const { rawData, sortedAlbum, sortedMerch } = classifyPhotos(data);
+      const newest = rawData.reduce((m, f) => Math.max(m, f.t || 0), 0);
+      setCheck({
+        loading: false, name: info?.name, album: sortedAlbum.length, merch: sortedMerch.length,
+        gaps: findPageGaps(sortedAlbum), pending: rawData.filter(isPending).length,
+        newestMin: newest ? Math.max(0, Math.round((Date.now() - newest) / 60000)) : undefined,
+      });
+    } catch (err: any) {
+      setCheck({ loading: false, error: err?.message || "讀取資料夾失敗，請確認連結與共用權限" });
+    }
   };
 
   const handleResetForm = () => {
     setLinkError("");
+    setCheck(null);
+    setAdminBrand(null);
     setFolderLink("");
     setGeneratedLink("");
     setIsCopied(false);
@@ -824,26 +923,7 @@ function AppInner() {
 
   // ⚡ V2.19：把清單整理成相冊／框畫並顯示（快取或最新資料共用）
   const applyList = async (data: Photo[], id: string, opts: { restoreDraft: boolean }) => {
-    const rawData: Photo[] = (Array.isArray(data) ? data : []).filter(isImageFile);
-    const filteredAlbum: Photo[] = [];
-    const filteredMerch: Photo[] = [];
-    rawData.forEach(file => {
-      const n = normalizeMerchName(file.name);
-      // V2.9：相冊公版檔名一律含「相冊」，封面／封底含「封面」「封底」→ 歸相冊；其餘符合條件者歸框畫
-      const albumGuard = /相冊|相本|跨頁|封面|封底/.test(n);
-      const isMerch = !albumGuard && (/框|畫|卡|海報|桌曆|周邊|簽名|小物|相紙|蠶絲|\d+x\d+/.test(n) || !!getMerchTrimRule(n));
-      const isAlbumCover = (n.includes("封面") || n.includes("封底")) && !isMerch;
-      if (isMerch && !isAlbumCover) filteredMerch.push(file); else filteredAlbum.push(file);
-    });
-    const getWeight = (filename = "") => {
-      const n = filename.toLowerCase();
-      if (n.includes("封面") || n.startsWith("000")) return -999999;
-      if (n.includes("封底")) return 999999;
-      const match = filename.match(/_(\d+)/);
-      return (match && match[1]) ? parseInt(match[1], 10) : 0;
-    };
-    const sortedAlbum = filteredAlbum.sort((a, b) => (getWeight(a.name) - getWeight(b.name)) || naturalCompare(a.name, b.name));
-    const sortedMerch = filteredMerch.sort((a, b) => naturalCompare(a.name, b.name));
+    const { rawData, sortedAlbum, sortedMerch } = classifyPhotos(data);
 
     // 版面比例：先用 Apps Script 回傳的寬高快速顯示；之後一律以「瀏覽器實際載入的圖片」校正（V2.21）
     const probe = sortedAlbum.find((p, idx) => !checkIsSinglePage(p, idx, sortedAlbum.length)) || sortedAlbum[0] || null;
@@ -949,6 +1029,36 @@ function AppInner() {
     refineAlbumRatio();
   };
 
+  // 🔄 V2.23：重新向雲端讀最新清單（略過快取）；有新檔案就補上，不影響已填的修改建議
+  const refreshList = async (id: string) => {
+    try {
+      const data = await fetchWithRetry(`${API_URL}?folderId=${id}&fresh=1`, 1);
+      if (!Array.isArray(data)) return null;
+      const str = JSON.stringify(data);
+      const before = countRef.current;
+      if (str !== lastListStrRef.current) {
+        lastListStrRef.current = str;
+        safeStorage.set(LIST_CACHE_PREFIX + id, JSON.stringify({ t: Date.now(), data }));
+        const { sortedAlbum, sortedMerch } = classifyPhotos(data);
+        await applyList(data, id, { restoreDraft: false });
+        refineAlbumRatio();
+        const added = sortedAlbum.length + sortedMerch.length - before;
+        if (added > 0) showToast(`📥 已補上 ${added} 頁剛上傳完成的內容`);
+        return { data, added };
+      }
+      return { data, added: 0 };
+    } catch { return null; }
+  };
+  const scheduleRecheck = (id: string, data: any) => {
+    listUnstableRef.current = isListUnstable(data);
+    if (!listUnstableRef.current || recheckCountRef.current >= RECHECK_MAX) return;
+    recheckCountRef.current++;
+    setTimeout(async () => {
+      const r = await refreshList(id);
+      scheduleRecheck(id, r ? r.data : data);
+    }, RECHECK_MS);
+  };
+
   const fetchPhotos = async (id: string) => {
     setLoading(true); setError("");
     // ⚡ 第二次開啟：先用上次的清單秒開，背景再向雲端確認是否有更新
@@ -980,7 +1090,9 @@ function AppInner() {
         return;
       }
       const str = JSON.stringify(data);
+      lastListStrRef.current = str;
       safeStorage.set(LIST_CACHE_PREFIX + id, JSON.stringify({ t: Date.now(), data }));
+      scheduleRecheck(id, data); // V2.23：還在上傳中 → 背景自動補頁
       if (!usedCache) {
         const target = await applyList(data, id, { restoreDraft: true });
         verifyAndRefine(target);
@@ -996,6 +1108,7 @@ function AppInner() {
   };
 
   const maxSpreads = Math.max(0, albumPhotos.length - 1);
+  countRef.current = albumPhotos.length + merchPhotos.length;
 
   const handlePageChange = (newIndex: number) => {
     if (currentView !== 'album' || newIndex === albumSpreadIndex || flipState) return;
@@ -1240,6 +1353,7 @@ function AppInner() {
       action: 'submit',
       asyncPdf: true,          // V2.20：PDF 改由第二段背景產生（舊版 Apps Script 會忽略此欄、照舊當場產生）
       appVersion: APP_VERSION,
+      brand: BR.label,
       folderId,
       caseName: albumName,
       ref,
@@ -1277,7 +1391,13 @@ function AppInner() {
 
   // 👑 LINE 串接：先複製 → 同步雲端（最多等 8 秒）→ 跳轉 LINE
   // V2.18：送出前檢查「有畫筆、沒文字」的頁面
-  const handleFinishClick = () => {
+  const handleFinishClick = async () => {
+    // V2.23：清單可能還在上傳中 → 送出前再向雲端確認一次，有新頁就先讓客人看完
+    if (listUnstableRef.current && folderId) {
+      const r = await refreshList(folderId);
+      if (r) listUnstableRef.current = isListUnstable(r.data);
+      if (r && r.added > 0) return;
+    }
     const ai = albumPhotos.findIndex(p => needsText(p.id));
     if (ai !== -1) { jumpTo('album', ai); showToast(`「${getAlbumIndicatorLabel(ai)}」有畫筆標註，請補上文字說明後再送出`); return; }
     const mi = merchPhotos.findIndex(p => needsText(p.id));
@@ -1295,10 +1415,10 @@ function AppInner() {
     const summary = generateFeedbackSummary();
     let textToSend = "";
     if (type === "approve") {
-      textToSend = `【辰妍國際 校稿確認】\n案號：${albumName}\n需求單編號：${ref}\n狀態：✅ 所有項目皆確認無誤，請安排印務製作，謝謝！`;
+      textToSend = `【${BR.display} 校稿確認】\n案號：${albumName}\n需求單編號：${ref}\n狀態：✅ 所有項目皆確認無誤，請安排印務製作，謝謝！`;
     } else {
       if (!summary) { alert("您尚未填寫任何修改需求喔！"); return; }
-      textToSend = `【辰妍國際 校稿調整需求】\n案號：${albumName}\n需求單編號：${ref}\n狀態：⚠️ 希望微調內容\n\n📌 調整說明：\n${summary}`;
+      textToSend = `【${BR.display} 校稿調整需求】\n案號：${albumName}\n需求單編號：${ref}\n狀態：⚠️ 希望微調內容\n\n📌 調整說明：\n${summary}`;
     }
 
     setSendingStatus(type);
@@ -1318,7 +1438,7 @@ function AppInner() {
       lineText = textToSend.slice(0, textToSend.length - summary.length) + summary.slice(0, LINE_SUMMARY_LIMIT) +
         `…\n\n（內容較長，完整需求已${synced ? "同步至雲端並" : ""}複製，請直接貼上）`;
     }
-    const lineUrl = `https://line.me/R/oaMessage/${encodeURIComponent(LINE_OA_ID)}/?${encodeURIComponent(lineText)}`;
+    const lineUrl = `https://line.me/R/oaMessage/${encodeURIComponent(BR.lineId)}/?${encodeURIComponent(lineText)}`;
     window.location.href = lineUrl;
     setTimeout(() => setSendingStatus(null), 2000);
   };
@@ -1333,8 +1453,20 @@ function AppInner() {
             <p className="brand-subtitle">ALBUM PROOFING SYSTEM</p>
 
             <form onSubmit={handleGenerateLink}>
+              {/* V2.22：品牌選擇（決定客人送出後開啟哪個 LINE 官方帳號） */}
               <div className="input-group">
-                <label className="input-label">請貼上「04 設計部」資料夾的連結：</label>
+                <label className="input-label">① 選擇品牌：</label>
+                <div className="brand-pick">
+                  {(Object.keys(BRANDS) as BrandKey[]).map(k => (
+                    <button key={k} type="button" className={`brand-pick-btn ${adminBrand === k ? 'on' : ''}`}
+                      onClick={() => { setAdminBrand(k); setGeneratedLink(""); setLinkError(""); }}>
+                      <b>{BRANDS[k].label}</b><span>LINE {BRANDS[k].lineId}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="input-group">
+                <label className="input-label">② 貼上「04 設計部」資料夾的連結：</label>
                 <input
                   className="drive-input"
                   value={folderLink}
@@ -1348,10 +1480,10 @@ function AppInner() {
               </div>
 
               <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                <button className="btn-generate" type="submit" disabled={!folderLink.trim()} style={{ margin: 0, flex: 3 }}>
+                <button className="btn-generate" type="submit" disabled={!folderLink.trim() || !adminBrand} style={{ margin: 0, flex: 3 }}>
                   產生專屬校稿連結
                 </button>
-                <button className="btn-reset" type="button" onClick={handleResetForm} disabled={!folderLink && !generatedLink} style={{ flex: 1 }}>
+                <button className="btn-reset" type="button" onClick={handleResetForm} disabled={!folderLink && !generatedLink && !adminBrand} style={{ flex: 1 }}>
                   🧹 清除
                 </button>
               </div>
@@ -1359,8 +1491,26 @@ function AppInner() {
 
             {generatedLink && (
               <div className="result-box">
-                <p style={{ color: '#888', fontSize: '0.85rem', marginBottom: '10px' }}>給客人的專屬直連網址：</p>
+                <p style={{ color: '#888', fontSize: '0.85rem', marginBottom: '10px' }}>給客人的專屬直連網址（{adminBrand ? `${BRANDS[adminBrand].label}・送出後開啟 LINE ${BRANDS[adminBrand].lineId}` : ''}）：</p>
                 <div className="client-link-text">{generatedLink}</div>
+                {/* V2.23：傳給客人前的資料夾檢查 */}
+                {check && (() => {
+                  const warn = !check.loading && !check.error && !check.locked && ((check.gaps && check.gaps.length > 0) || (check.pending || 0) > 0 || (check.album || 0) + (check.merch || 0) === 0);
+                  return (
+                    <div className={`check-box ${check.loading ? '' : (check.error || check.locked || warn) ? 'warn' : 'ok'}`}>
+                      {check.loading ? '🔍 正在檢查資料夾內容…' : check.error ? `⚠️ ${check.error}` : check.locked ? '🔒 此案已被客人送出並鎖定；需重新校稿請先刪除資料夾內的🔒檔案' : (
+                        <>
+                          <div><b>{check.name || '（讀取案號中）'}</b>：相冊 {check.album} 頁、框畫 {check.merch} 件</div>
+                          {check.gaps && check.gaps.length > 0 && <div>⚠️ 跨頁缺號：第 {check.gaps.join('、')} 頁</div>}
+                          {(check.pending || 0) > 0 && <div>⏳ 有 {check.pending} 個檔案剛上傳或 Google 還在處理{check.newestMin !== undefined ? `（最新一張 ${check.newestMin} 分鐘前）` : ''}，建議 2–3 分鐘後按「重新檢查」</div>}
+                          {(check.album || 0) + (check.merch || 0) === 0 && <div>⚠️ 資料夾內沒有可校稿的圖片</div>}
+                          {!warn && <div>✅ 頁數完整、上傳完成，可以傳給客人</div>}
+                        </>
+                      )}
+                      {!check.loading && <button type="button" className="check-again" onClick={() => runCheck(extractIdFromLink(folderLink))}>🔄 重新檢查</button>}
+                    </div>
+                  );
+                })()}
                 <div style={{ display: 'flex', gap: '10px' }}>
                   <button className="btn-copy" onClick={copyGeneratedLink}>
                     {isCopied ? "✓ 已複製連結" : "📋 複製給客人"}
@@ -1421,7 +1571,7 @@ function AppInner() {
         <style>{GLOBAL_STYLES}</style>
         <div className="admin-viewport">
           <div className="admin-box" style={{ padding: '60px', boxShadow: 'none', border: 'none', background: 'transparent' }}>
-            <h1 className="brand-logo-text" style={{ fontSize: '2rem' }}>辰妍國際</h1>
+            <h1 className="brand-logo-text" style={{ fontSize: '2rem' }}>{BR.display}</h1>
             {!error && <div className="load-spinner" />}
             <p style={{ color: '#888', marginTop: '20px' }}>{error ? error : "正在為您精準載入相冊，請稍候..."}</p>
           </div>
@@ -1650,7 +1800,7 @@ function AppInner() {
         )}
 
         <header className="header-bar">
-          <div className="brand-logo-text-small">辰妍國際</div>
+          <div className="brand-logo-text-small">{BR.display}</div>
           {/* V2.18：電腦版「全部頁面」移到左上、分頁前 */}
           <button className="tab-btn overview-head-btn" onClick={openOverview}>📑 全部頁面</button>
 
