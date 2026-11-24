@@ -6,7 +6,7 @@ const API_URL = "https://script.google.com/macros/s/AKfycbwvYeDb8KyJid5pxPqEn1S-
 // ==========================================
 // ⚙️ 系統設定（V2.20）
 // ==========================================
-const APP_VERSION = "V2.24";
+const APP_VERSION = "V2.26";
 const RATIO_TOLERANCE = 0.015; // V2.21：版面比例與實際圖片差超過 1.5% 就以實際圖片為準
 // 🏷️ V2.22：多品牌 — 每條校稿連結帶 b=品牌代碼，送出時開啟該品牌的 LINE 官方帳號
 //   新增品牌只要在這裡加一行；舊連結（沒有 b=）一律視為小詩琦
@@ -105,8 +105,8 @@ const GLOBAL_STYLES = `
     user-select: none;
   }
 
-  .admin-viewport { position: fixed; inset: 0; display: flex; justify-content: center; align-items: center; background: #F4F7F6; z-index: 1000; padding: 20px; }
-  .admin-box { width: 100%; max-width: 500px; padding: 50px 40px; background-color: #ffffff; border-radius: 12px; box-shadow: 0 15px 35px rgba(0,0,0,0.06); text-align: center; border: 1px solid #E5E9EA; }
+  .admin-viewport { position: fixed; inset: 0; display: flex; justify-content: center; align-items: flex-start; background: #F4F7F6; z-index: 1000; padding: 20px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  .admin-box { margin: auto; width: 100%; max-width: 500px; padding: 50px 40px; background-color: #ffffff; border-radius: 12px; box-shadow: 0 15px 35px rgba(0,0,0,0.06); text-align: center; border: 1px solid #E5E9EA; }
   .brand-logo-text { font-family: "Montserrat", sans-serif; font-weight: 600; font-size: 2.2rem; letter-spacing: 5px; color: #187880; margin-bottom: 8px; }
   .brand-subtitle { font-size: 0.75rem; letter-spacing: 3px; color: #888; margin-bottom: 25px; text-transform: uppercase; }
 
@@ -133,6 +133,9 @@ const GLOBAL_STYLES = `
   .done-ref { color: #555; font-weight: 600; margin-bottom: 12px; }
   .done-desc { color: #555; font-size: 0.92rem; line-height: 1.7; }
   .done-note { margin-top: 14px; color: #888; font-size: 0.8rem; line-height: 1.6; background: #F4F7F6; border-radius: 6px; padding: 8px 10px; }
+  /* V2.26：後台在小螢幕縮小留白，內容較長時可捲動 */
+  @media (max-width: 768px), (max-height: 820px) { .admin-box { padding: 30px 22px; } .admin-viewport { padding: 12px; } }
+  .check-prev { opacity: 0.55; margin-top: 2px; }
   /* V2.23：傳給客人前的資料夾檢查 */
   .check-box { margin-bottom: 15px; padding: 10px 12px; border-radius: 6px; font-size: 0.85rem; line-height: 1.7; text-align: left; background: #F4F7F6; color: #555; border: 1px solid #E5E9EA; }
   .check-box.ok { background: #eef8f2; border-color: #b9e2c8; color: #1e6b3a; }
@@ -560,6 +563,7 @@ const LOW_SZ = 480;   // 先顯示的低解析預覽（約 30KB，秒開）
 const fastUrl = (id: string, sz = VIEW_SZ) => `https://lh3.googleusercontent.com/d/${id}=s${sz}`;
 const thumbUrl = (id: string, sz = VIEW_SZ) => `https://drive.google.com/thumbnail?id=${id}&sz=s${sz}`;
 const LIST_CACHE_PREFIX = "album-list-v1-";
+const FETCH_TIMEOUT_MS = 30 * 1000; // V2.25：向雲端讀取的等待上限（Apps Script 冷啟動＋大資料夾通常 5–20 秒）
 const SUBMITTED_PREFIX = "album-submitted-"; // V2.24：本機記錄「已送出」（重新整理也不會再出現送出按鈕）
 
 // ==========================================
@@ -753,7 +757,7 @@ function AppInner() {
   const lastListStrRef = useRef("");
   const countRef = useRef(0);
   // V2.23：後台「傳給客人前」檢查
-  const [check, setCheck] = useState<null | { loading: boolean; error?: string; name?: string; album?: number; merch?: number; gaps?: number[]; pending?: number; newestMin?: number; locked?: boolean }>(null);
+  const [check, setCheck] = useState<null | { loading: boolean; startedAt?: number; error?: string; name?: string; album?: number; merch?: number; gaps?: number[]; pending?: number; newestMin?: number; locked?: boolean }>(null);
 
   const albumRef = useRef<HTMLDivElement>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -788,6 +792,8 @@ function AppInner() {
       }
     } else {
       setAppMode('admin');
+      // V2.26：後台一打開就先喚醒雲端（Apps Script 冷啟動約 3–8 秒），之後的檢查會快很多
+      fetch(`${API_URL}?ping=1`).catch(() => { /* ignore */ });
     }
   }, []);
 
@@ -874,13 +880,27 @@ function AppInner() {
   };
 
   // 🔍 V2.23：產生連結後自動檢查資料夾（頁數、缺號、是否還在上傳），確認無誤再傳給客人
+  const resultRef = useRef<HTMLDivElement>(null);
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!check || !check.loading) return;
+    const t = setInterval(() => setTick(x => x + 1), 1000);
+    return () => clearInterval(t);
+  }, [check?.loading]);
+  const checkSeqRef = useRef(0); // V2.25：只採用「最後一次」檢查的結果，避免較慢的舊請求蓋掉新結果
   const runCheck = async (targetId: string) => {
-    setCheck({ loading: true });
+    const seq = ++checkSeqRef.current;
+    // V2.26：重新檢查時保留上次結果（淡色顯示），並顯示已等待秒數
+    setCheck(prev => ({ ...(prev && !prev.error ? prev : {}), loading: true, startedAt: Date.now(), error: undefined }));
+    setTimeout(() => { try { resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch { /* ignore */ } }, 50);
     try {
+      const infoCtrl = new AbortController();
+      const infoTimer = setTimeout(() => infoCtrl.abort(), FETCH_TIMEOUT_MS);
       const [data, info] = await Promise.all([
-        fetchWithRetry(`${API_URL}?folderId=${targetId}&fresh=1`, 1),
-        fetch(`${API_URL}?info=${encodeURIComponent(targetId)}`).then(r => r.json()).catch(() => null),
+        fetchWithRetry(`${API_URL}?folderId=${targetId}&fresh=1`, 2),
+        fetch(`${API_URL}?info=${encodeURIComponent(targetId)}`, { signal: infoCtrl.signal }).then(r => r.json()).catch(() => null).finally(() => clearTimeout(infoTimer)),
       ]);
+      if (seq !== checkSeqRef.current) return;
       if (data && !Array.isArray(data) && data.locked) { setCheck({ loading: false, locked: true, name: info?.name }); return; }
       const { rawData, sortedAlbum, sortedMerch } = classifyPhotos(data);
       const newest = rawData.reduce((m, f) => Math.max(m, f.t || 0), 0);
@@ -890,7 +910,8 @@ function AppInner() {
         newestMin: newest ? Math.max(0, Math.round((Date.now() - newest) / 60000)) : undefined,
       });
     } catch (err: any) {
-      setCheck({ loading: false, error: err?.message || "讀取資料夾失敗，請確認連結與共用權限" });
+      if (seq !== checkSeqRef.current) return;
+      setCheck({ loading: false, error: `${err?.message || "讀取資料夾失敗"}。請確認：① 貼的是「04 設計部」資料夾連結 ② 資料夾共用權限 ③ Apps Script 已部署新版本；再按「重新檢查」` });
     }
   };
 
@@ -919,17 +940,22 @@ function AppInner() {
     return false;
   };
 
-  const fetchWithRetry = async (url: string, retries = 3): Promise<any> => {
+  // V2.25：每次請求最多等 FETCH_TIMEOUT_MS，避免雲端沒回應時畫面一直轉圈
+  const fetchWithRetry = async (url: string, retries = 3, timeoutMs = FETCH_TIMEOUT_MS): Promise<any> => {
     let lastErr: any;
     for (let i = 0; i < retries; i++) {
       let text = "";
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), timeoutMs);
       try {
-        const res = await fetch(url);
+        const res = await fetch(url, { signal: ctrl.signal });
         text = await res.text();
-      } catch (err) {
-        lastErr = err;                       // 網路錯誤 → 重試
+      } catch (err: any) {
+        lastErr = err && err.name === 'AbortError' ? new Error(`雲端超過 ${Math.round(timeoutMs / 1000)} 秒沒有回應`) : err; // 網路錯誤／逾時 → 重試
         await new Promise(r => setTimeout(r, 1000 * (i + 1)));
         continue;
+      } finally {
+        clearTimeout(timer);
       }
       if (text.startsWith('<!DOCTYPE') || text.includes('<html')) {
         lastErr = new Error("Google 伺服器短暫異常，請重新整理頁面。");
@@ -1546,7 +1572,7 @@ function AppInner() {
             </form>
 
             {generatedLink && (
-              <div className="result-box">
+              <div className="result-box" ref={resultRef}>
                 <p style={{ color: '#888', fontSize: '0.85rem', marginBottom: '10px' }}>給客人的專屬直連網址（{adminBrand ? `${BRANDS[adminBrand].label}・送出後開啟 LINE ${BRANDS[adminBrand].lineId}` : ''}）：</p>
                 <div className="client-link-text">{generatedLink}</div>
                 {/* V2.23：傳給客人前的資料夾檢查 */}
@@ -1554,7 +1580,12 @@ function AppInner() {
                   const warn = !check.loading && !check.error && !check.locked && ((check.gaps && check.gaps.length > 0) || (check.pending || 0) > 0 || (check.album || 0) + (check.merch || 0) === 0);
                   return (
                     <div className={`check-box ${check.loading ? '' : (check.error || check.locked || warn) ? 'warn' : 'ok'}`}>
-                      {check.loading ? '🔍 正在檢查資料夾內容…' : check.error ? `⚠️ ${check.error}` : check.locked ? '🔒 此案已被客人送出並鎖定；需重新校稿請先刪除資料夾內的🔒檔案' : (
+                      {check.loading ? (
+                        <>
+                          <div>🔍 正在檢查資料夾內容…（已等待 {Math.max(0, Math.round((Date.now() - (check.startedAt || Date.now())) / 1000))} 秒，通常 3–15 秒）</div>
+                          {check.album !== undefined && <div className="check-prev">上次結果：相冊 {check.album} 頁、框畫 {check.merch} 件</div>}
+                        </>
+                      ) : check.error ? `⚠️ ${check.error}` : check.locked ? '🔒 此案已被客人送出並鎖定；需重新校稿請先刪除資料夾內的🔒檔案' : (
                         <>
                           <div><b>{check.name || '（讀取案號中）'}</b>：相冊 {check.album} 頁、框畫 {check.merch} 件</div>
                           {check.gaps && check.gaps.length > 0 && <div>⚠️ 跨頁缺號：第 {check.gaps.join('、')} 頁</div>}
