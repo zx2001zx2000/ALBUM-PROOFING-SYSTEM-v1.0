@@ -712,7 +712,6 @@ function AppInner() {
   const [isAlbumRotated, setIsAlbumRotated] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const urlModeRef = useRef<'lh3' | 'thumb' | 'orig'>(USE_FAST_CDN ? 'lh3' : 'thumb');
-  const [merchVisited, setMerchVisited] = useState(false);
   // V2.18：畫筆標註
   const [drawings, setDrawings] = useState<Record<string, Stroke[]>>({});
   const [drawMode, setDrawMode] = useState(false);
@@ -798,7 +797,6 @@ function AppInner() {
     safeStorage.set(DRAFT_PREFIX + folderId, JSON.stringify({ savedAt: Date.now(), feedbacks: allFeedbacks, drawings }));
   }, [allFeedbacks, drawings, folderId]);
 
-  useEffect(() => { if (currentView === 'merch') setMerchVisited(true); }, [currentView]);
 
   // V2.15：全螢幕 — 返回鍵／Esc／系統退出全螢幕時同步關閉；按鈕 3 秒沒操作自動隱藏
   useEffect(() => {
