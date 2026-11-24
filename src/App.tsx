@@ -6,7 +6,7 @@ const API_URL = "https://script.google.com/macros/s/AKfycbwvYeDb8KyJid5pxPqEn1S-
 // ==========================================
 // ⚙️ 系統設定（V2.20）
 // ==========================================
-const APP_VERSION = "V2.26";
+const APP_VERSION = "V2.27";
 const RATIO_TOLERANCE = 0.015; // V2.21：版面比例與實際圖片差超過 1.5% 就以實際圖片為準
 // 🏷️ V2.22：多品牌 — 每條校稿連結帶 b=品牌代碼，送出時開啟該品牌的 LINE 官方帳號
 //   新增品牌只要在這裡加一行；舊連結（沒有 b=）一律視為小詩琦
@@ -563,6 +563,7 @@ const LOW_SZ = 480;   // 先顯示的低解析預覽（約 30KB，秒開）
 const fastUrl = (id: string, sz = VIEW_SZ) => `https://lh3.googleusercontent.com/d/${id}=s${sz}`;
 const thumbUrl = (id: string, sz = VIEW_SZ) => `https://drive.google.com/thumbnail?id=${id}&sz=s${sz}`;
 const LIST_CACHE_PREFIX = "album-list-v1-";
+const HEDGE_MS = 2500;          // V2.27：2.5 秒沒回應就並行補送一個請求（實測正常 1.5–3.5 秒）
 const FETCH_TIMEOUT_MS = 30 * 1000; // V2.25：向雲端讀取的等待上限（Apps Script 冷啟動＋大資料夾通常 5–20 秒）
 const SUBMITTED_PREFIX = "album-submitted-"; // V2.24：本機記錄「已送出」（重新整理也不會再出現送出按鈕）
 
@@ -596,7 +597,8 @@ const classifyPhotos = (data: Photo[]) => {
   return { rawData, sortedAlbum, sortedMerch };
 };
 // 上傳中判斷：剛上傳的檔案，或 Google 還沒處理完（沒有寬高）的圖片
-const isPending = (f: Photo) => (!!f.t && Date.now() - f.t < UNSTABLE_MS) || (!f.w && /^image\/(jpe?g|png|webp)$/i.test(f.mimeType || ""));
+// V2.27：缺寬高只在「剛上傳 30 分鐘內」才算處理中（避免舊檔案永遠被當成上傳中）
+const isPending = (f: Photo) => (!!f.t && Date.now() - f.t < UNSTABLE_MS) || (!f.w && /^image\/(jpe?g|png|webp)$/i.test(f.mimeType || "") && (!f.t || Date.now() - f.t < 3 * UNSTABLE_MS));
 const isListUnstable = (data: any) => Array.isArray(data) && data.filter(isImageFile).some(isPending);
 // 跨頁編號缺號（例如有 _01～_08 但沒有 _05）
 const findPageGaps = (album: Photo[]) => {
@@ -757,7 +759,7 @@ function AppInner() {
   const lastListStrRef = useRef("");
   const countRef = useRef(0);
   // V2.23：後台「傳給客人前」檢查
-  const [check, setCheck] = useState<null | { loading: boolean; startedAt?: number; error?: string; name?: string; album?: number; merch?: number; gaps?: number[]; pending?: number; newestMin?: number; locked?: boolean }>(null);
+  const [check, setCheck] = useState<null | { loading: boolean; startedAt?: number; tookSec?: number; error?: string; name?: string; album?: number; merch?: number; gaps?: number[]; pending?: number; newestMin?: number; locked?: boolean }>(null);
 
   const albumRef = useRef<HTMLDivElement>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -785,15 +787,14 @@ function AppInner() {
       fetchPhotos(idFromUrl);
       // V2.8：新連結不帶案號 → 以雲端資料夾名稱為案號（舊連結仍沿用網址上的 name）
       if (!nameFromUrl) {
-        fetch(`${API_URL}?info=${encodeURIComponent(idFromUrl)}`)
-          .then(r => r.json())
+        fetchWithRetry(`${API_URL}?info=${encodeURIComponent(idFromUrl)}`, 3, 15000)
           .then(j => { if (j && j.name) setAlbumName(j.name); })
           .catch(() => { /* 取不到就維持「校稿預覽」 */ });
       }
     } else {
       setAppMode('admin');
       // V2.26：後台一打開就先喚醒雲端（Apps Script 冷啟動約 3–8 秒），之後的檢查會快很多
-      fetch(`${API_URL}?ping=1`).catch(() => { /* ignore */ });
+      fetch(`${API_URL}?ping=${Date.now().toString(36)}`).catch(() => { /* ignore */ });
     }
   }, []);
 
@@ -894,21 +895,29 @@ function AppInner() {
     setCheck(prev => ({ ...(prev && !prev.error ? prev : {}), loading: true, startedAt: Date.now(), error: undefined }));
     setTimeout(() => { try { resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch { /* ignore */ } }, 50);
     try {
-      const infoCtrl = new AbortController();
-      const infoTimer = setTimeout(() => infoCtrl.abort(), FETCH_TIMEOUT_MS);
-      const [data, info] = await Promise.all([
-        fetchWithRetry(`${API_URL}?folderId=${targetId}&fresh=1`, 2),
-        fetch(`${API_URL}?info=${encodeURIComponent(targetId)}`, { signal: infoCtrl.signal }).then(r => r.json()).catch(() => null).finally(() => clearTimeout(infoTimer)),
-      ]);
+      // V2.27：案號不擋住檢查結果 — 先用記住的案號，沒有才另外查，查到再補上
+      const nameKey = 'album-casename-' + targetId;
+      let info: { name?: string } | null = safeStorage.get(nameKey) ? { name: safeStorage.get(nameKey) || '' } : null;
+      if (!info) {
+        fetchWithRetry(`${API_URL}?info=${encodeURIComponent(targetId)}`, 3, 15000)
+          .then(j => {
+            if (!j || !j.name) return;
+            safeStorage.set(nameKey, j.name);
+            if (seq === checkSeqRef.current) setCheck(prev => (prev ? { ...prev, name: j.name } : prev));
+          })
+          .catch(() => { /* 查不到案號不影響檢查 */ });
+      }
+      const data = await fetchWithRetry(`${API_URL}?folderId=${targetId}&fresh=1`, 3);
       if (seq !== checkSeqRef.current) return;
-      if (data && !Array.isArray(data) && data.locked) { setCheck({ loading: false, locked: true, name: info?.name }); return; }
+      if (data && !Array.isArray(data) && data.locked) { setCheck(prev => ({ loading: false, locked: true, name: info?.name || prev?.name })); return; }
       const { rawData, sortedAlbum, sortedMerch } = classifyPhotos(data);
       const newest = rawData.reduce((m, f) => Math.max(m, f.t || 0), 0);
-      setCheck({
-        loading: false, name: info?.name, album: sortedAlbum.length, merch: sortedMerch.length,
+      setCheck(prev => ({
+        loading: false, tookSec: prev?.startedAt ? Math.round((Date.now() - prev.startedAt) / 100) / 10 : undefined,
+        name: info?.name || prev?.name, album: sortedAlbum.length, merch: sortedMerch.length,
         gaps: findPageGaps(sortedAlbum), pending: rawData.filter(isPending).length,
         newestMin: newest ? Math.max(0, Math.round((Date.now() - newest) / 60000)) : undefined,
-      });
+      }));
     } catch (err: any) {
       if (seq !== checkSeqRef.current) return;
       setCheck({ loading: false, error: `${err?.message || "讀取資料夾失敗"}。請確認：① 貼的是「04 設計部」資料夾連結 ② 資料夾共用權限 ③ Apps Script 已部署新版本；再按「重新檢查」` });
@@ -940,34 +949,45 @@ function AppInner() {
     return false;
   };
 
-  // V2.25：每次請求最多等 FETCH_TIMEOUT_MS，避免雲端沒回應時畫面一直轉圈
-  const fetchWithRetry = async (url: string, retries = 3, timeoutMs = FETCH_TIMEOUT_MS): Promise<any> => {
-    let lastErr: any;
-    for (let i = 0; i < retries; i++) {
-      let text = "";
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-      try {
-        const res = await fetch(url, { signal: ctrl.signal });
-        text = await res.text();
-      } catch (err: any) {
-        lastErr = err && err.name === 'AbortError' ? new Error(`雲端超過 ${Math.round(timeoutMs / 1000)} 秒沒有回應`) : err; // 網路錯誤／逾時 → 重試
-        await new Promise(r => setTimeout(r, 1000 * (i + 1)));
-        continue;
-      } finally {
-        clearTimeout(timer);
-      }
-      if (text.startsWith('<!DOCTYPE') || text.includes('<html')) {
-        lastErr = new Error("Google 伺服器短暫異常，請重新整理頁面。");
-        await new Promise(r => setTimeout(r, 1000 * (i + 1)));
-        continue;
-      }
-      const json = JSON.parse(text);
-      if (json && json.error) throw new Error(json.error); // 權限／ID 錯誤不必重試
-      return json;
-    }
-    throw lastErr;
-  };
+  // V2.27：「並行補送」— 雲端偶爾會有單一請求卡住 10 秒以上（實測正常只要 1.5–3.5 秒）。
+  //   第一個請求 HEDGE_MS 內沒回應就再送一個，最多 retries 個同時進行，採用最先回來的結果；
+  //   每個請求網址都加唯一參數，避免瀏覽器把相同網址排在卡住的請求後面。
+  const fetchWithRetry = (url: string, retries = 3, timeoutMs = FETCH_TIMEOUT_MS): Promise<any> => new Promise((resolve, reject) => {
+    let settled = false, launched = 0, failed = 0, lastErr: any = null;
+    const ctrls: AbortController[] = [];
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const finish = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      ctrls.forEach(c => { try { c.abort(); } catch { /* ignore */ } });
+      timers.forEach(clearTimeout);
+      fn();
+    };
+    const launch = () => {
+      if (settled || launched >= retries) return;
+      launched++;
+      const c = new AbortController(); ctrls.push(c);
+      const u = url + (url.includes('?') ? '&' : '?') + '_r=' + Date.now().toString(36) + launched;
+      fetch(u, { signal: c.signal })
+        .then(r => r.text())
+        .then(text => {
+          if (settled) return;
+          if (text.startsWith('<!DOCTYPE') || text.includes('<html')) throw new Error("Google 伺服器短暫異常，請重新整理頁面。");
+          const json = JSON.parse(text);
+          if (json && json.error) { finish(() => reject(new Error(json.error))); return; } // 權限／ID 錯誤不必重試
+          finish(() => resolve(json));
+        })
+        .catch(err => {
+          if (settled) return;
+          lastErr = err; failed++;
+          if (failed >= retries) { finish(() => reject(lastErr)); return; }
+          if (failed >= launched) launch(); // 進行中的都失敗了 → 立刻補送
+        });
+      if (launched < retries) timers.push(setTimeout(launch, HEDGE_MS));
+    };
+    timers.push(setTimeout(() => finish(() => reject(lastErr || new Error(`雲端超過 ${Math.round(timeoutMs / 1000)} 秒沒有回應`))), timeoutMs));
+    launch();
+  });
 
   // ⚡ V2.19：把清單整理成相冊／框畫並顯示（快取或最新資料共用）
   const applyList = async (data: Photo[], id: string, opts: { restoreDraft: boolean }) => {
@@ -1081,7 +1101,7 @@ function AppInner() {
   // 🔄 V2.23：重新向雲端讀最新清單（略過快取）；有新檔案就補上，不影響已填的修改建議
   const refreshList = async (id: string) => {
     try {
-      const data = await fetchWithRetry(`${API_URL}?folderId=${id}&fresh=1`, 1);
+      const data = await fetchWithRetry(`${API_URL}?folderId=${id}&fresh=1`, 2);
       if (!Array.isArray(data)) return null;
       const str = JSON.stringify(data);
       const before = countRef.current;
@@ -1582,7 +1602,7 @@ function AppInner() {
                     <div className={`check-box ${check.loading ? '' : (check.error || check.locked || warn) ? 'warn' : 'ok'}`}>
                       {check.loading ? (
                         <>
-                          <div>🔍 正在檢查資料夾內容…（已等待 {Math.max(0, Math.round((Date.now() - (check.startedAt || Date.now())) / 1000))} 秒，通常 3–15 秒）</div>
+                          <div>🔍 正在檢查資料夾內容…（已等待 {Math.max(0, Math.round((Date.now() - (check.startedAt || Date.now())) / 1000))} 秒，通常 2–6 秒）</div>
                           {check.album !== undefined && <div className="check-prev">上次結果：相冊 {check.album} 頁、框畫 {check.merch} 件</div>}
                         </>
                       ) : check.error ? `⚠️ ${check.error}` : check.locked ? '🔒 此案已被客人送出並鎖定；需重新校稿請先刪除資料夾內的🔒檔案' : (
@@ -1592,6 +1612,7 @@ function AppInner() {
                           {(check.pending || 0) > 0 && <div>⏳ 有 {check.pending} 個檔案剛上傳或 Google 還在處理{check.newestMin !== undefined ? `（最新一張 ${check.newestMin} 分鐘前）` : ''}，建議 2–3 分鐘後按「重新檢查」</div>}
                           {(check.album || 0) + (check.merch || 0) === 0 && <div>⚠️ 資料夾內沒有可校稿的圖片</div>}
                           {!warn && <div>✅ 頁數完整、上傳完成，可以傳給客人</div>}
+                          {check.tookSec !== undefined && <div className="check-prev">（檢查耗時 {check.tookSec} 秒）</div>}
                         </>
                       )}
                       {!check.loading && <button type="button" className="check-again" onClick={() => runCheck(extractIdFromLink(folderLink))}>🔄 重新檢查</button>}
