@@ -6,7 +6,7 @@ const API_URL = "https://script.google.com/macros/s/AKfycbwvYeDb8KyJid5pxPqEn1S-
 // ==========================================
 // ⚙️ 系統設定（V2.20）
 // ==========================================
-const APP_VERSION = "V2.23";
+const APP_VERSION = "V2.24";
 const RATIO_TOLERANCE = 0.015; // V2.21：版面比例與實際圖片差超過 1.5% 就以實際圖片為準
 // 🏷️ V2.22：多品牌 — 每條校稿連結帶 b=品牌代碼，送出時開啟該品牌的 LINE 官方帳號
 //   新增品牌只要在這裡加一行；舊連結（沒有 b=）一律視為小詩琦
@@ -43,6 +43,16 @@ const MERCH_SWAP_FRAME = /換照框/;
 const SWAP_FRAME_CROP_MM = 2; // V2.14：換照框＝左右兩框，各自內縮 2mm
 const SILK_CROP_MM = 4; // V2.11：蠶絲膜（含「蠶絲」簡寫）不論尺寸，照原樣顯示，裁切線＝圖檔邊緣往內 4mm
 const A4_CROP_MM = 3;   // V2.20：A4 類裁切線（原 4mm，往外推 1mm）
+// 📏 V2.24：相冊裁切線改以 mm 計算（原本用百分比，只有 10 吋剛好約 4mm，8x6 會偏外）
+//   依相冊檔名／案號比對，由上往下先符合者優先；比對前同樣去空白、轉小寫、X→x
+const ALBUM_CROP_DEFAULT_MM = 4;
+const ALBUM_CROP_RULES: { name: string; match: RegExp; mm: number }[] = [
+  { name: "8x6／8吋相冊", match: /(^|[^\d])8x6|6x8(?!\d)|(^|[^\d])8(吋|寸)/, mm: 5 },
+];
+const albumCropMmFor = (text: string) => {
+  const n = normalizeMerchName(text);
+  return (ALBUM_CROP_RULES.find(r => r.match.test(n)) || { mm: ALBUM_CROP_DEFAULT_MM }).mm;
+};
 type Mm4 = { top: number; bottom: number; left: number; right: number };
 const mmAll = (n: number): Mm4 => ({ top: n, bottom: n, left: n, right: n });
 const MERCH_TRIM_RULES: { name: string; match: RegExp; orient?: 'portrait' | 'landscape'; trimMm: Mm4; cropMm: number }[] = [
@@ -115,6 +125,14 @@ const GLOBAL_STYLES = `
   .link-help { margin-top: 10px; background: #F4F7F6; border-left: 3px solid #187880; border-radius: 4px; padding: 10px 12px; font-size: 0.85rem; color: #555; line-height: 1.6; text-align: left; }
   .link-help-target { color: #fff; background: #187880; padding: 1px 8px; border-radius: 10px; font-weight: 700; }
   .link-help code { background: #fff; border: 1px solid #ddd; border-radius: 3px; padding: 0 4px; font-size: 0.78rem; }
+  /* V2.24：完成畫面 */
+  .done-box { max-width: 460px; }
+  .once-warn { background: #fff8e6; border: 1px solid #f0d48a; color: #8a5a00; border-radius: 6px; padding: 8px 12px; font-size: 0.85rem; text-align: center; margin-bottom: 6px; }
+  .done-icon { font-size: 3rem; margin: 10px 0 6px; }
+  .done-title { color: #187880; font-size: 1.3rem; margin-bottom: 8px; }
+  .done-ref { color: #555; font-weight: 600; margin-bottom: 12px; }
+  .done-desc { color: #555; font-size: 0.92rem; line-height: 1.7; }
+  .done-note { margin-top: 14px; color: #888; font-size: 0.8rem; line-height: 1.6; background: #F4F7F6; border-radius: 6px; padding: 8px 10px; }
   /* V2.23：傳給客人前的資料夾檢查 */
   .check-box { margin-bottom: 15px; padding: 10px 12px; border-radius: 6px; font-size: 0.85rem; line-height: 1.7; text-align: left; background: #F4F7F6; color: #555; border: 1px solid #E5E9EA; }
   .check-box.ok { background: #eef8f2; border-color: #b9e2c8; color: #1e6b3a; }
@@ -345,7 +363,8 @@ const GLOBAL_STYLES = `
     50% { box-shadow: 0 4px 10px rgba(0,0,0,0.05), 0 0 0 10px rgba(24,120,128,0); }
   }
   .more-badge { position: absolute; top: -6px; right: -6px; background: #e74c3c; color: #fff; font-size: 0.68rem; font-weight: 700; min-width: 20px; height: 20px; border-radius: 10px; padding: 0 5px; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 6px rgba(231,76,60,0.4); }
-  .page-remaining { margin-right: auto; font-size: 0.85rem; color: #e74c3c; font-weight: 600; }
+  .page-remaining { margin-right: auto; font-size: 0.85rem; color: #e74c3c; font-weight: 600; background: none; border: none; padding: 0 10px 0 0; text-align: left; min-width: 0; max-width: 55%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+  button.page-remaining:hover { text-decoration: underline; }
   .page-remaining.last { color: #187880; }
 
   .album-flipper { position: absolute; top: 0; bottom: 0; width: 50%; transform-style: preserve-3d; z-index: 30; transition: transform 0.8s cubic-bezier(0.645,0.045,0.355,1); }
@@ -541,6 +560,7 @@ const LOW_SZ = 480;   // 先顯示的低解析預覽（約 30KB，秒開）
 const fastUrl = (id: string, sz = VIEW_SZ) => `https://lh3.googleusercontent.com/d/${id}=s${sz}`;
 const thumbUrl = (id: string, sz = VIEW_SZ) => `https://drive.google.com/thumbnail?id=${id}&sz=s${sz}`;
 const LIST_CACHE_PREFIX = "album-list-v1-";
+const SUBMITTED_PREFIX = "album-submitted-"; // V2.24：本機記錄「已送出」（重新整理也不會再出現送出按鈕）
 
 // ==========================================
 // 📂 V2.23：清單分類（相冊／框畫）＋上傳狀態檢查（後台檢查與客人端共用）
@@ -686,6 +706,8 @@ function AppInner() {
   const [saveIndicator, setSaveIndicator] = useState(false);
   const [showFinalUI, setShowFinalUI] = useState(false);
   const [sendingStatus, setSendingStatus] = useState<"approve" | "feedback" | null>(null);
+  // V2.24：只有一次校稿機會 — 送出後顯示完成畫面
+  const [done, setDone] = useState<null | { ref: string; locked: boolean; text: string }>(null);
   // V2.1：整本旋轉 90°（手機直拿時跨頁可放大，改為上下翻閱）
   const [isAlbumRotated, setIsAlbumRotated] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -755,6 +777,8 @@ function AppInner() {
       if (!firstOpenAt) { firstOpenAt = Date.now(); safeStorage.set('album-first-' + idFromUrl, String(firstOpenAt)); }
       metricsRef.current.opens = opens;
       metricsRef.current.firstOpenAt = firstOpenAt;
+      // V2.24：這台裝置已送出過 → 直接顯示完成畫面（雲端若已被同仁重新開放，fetchPhotos 會自動清除）
+      try { const sub = JSON.parse(safeStorage.get(SUBMITTED_PREFIX + idFromUrl) || 'null'); if (sub && sub.ref) setDone({ ref: sub.ref, locked: true, text: '' }); } catch { /* ignore */ }
       fetchPhotos(idFromUrl);
       // V2.8：新連結不帶案號 → 以雲端資料夾名稱為案號（舊連結仍沿用網址上的 name）
       if (!nameFromUrl) {
@@ -951,7 +975,7 @@ function AppInner() {
       // V2.20：記錄「清單就緒」與「第一頁圖片顯示」的時間
       const m = metricsRef.current;
       if (m.listMs === undefined) m.listMs = nowMs();
-      const first = sortedAlbum[0] || sortedMerch[0];
+      const first = sortedMerch[0] || sortedAlbum[0];
       if (first && m.firstImgMs === undefined) {
         const fm = mapUrl(first);
         loadImage(fm.low || fm.url, 20000).then(r => { if (r !== null && metricsRef.current.firstImgMs === undefined) metricsRef.current.firstImgMs = nowMs(); });
@@ -969,7 +993,8 @@ function AppInner() {
       }
       setAllFeedbacks(restored);
       draftReadyRef.current = true;
-      setCurrentView(sortedAlbum.length === 0 && sortedMerch.length > 0 ? 'merch' : 'album');
+      // V2.24：框畫商品在前、相冊在後
+      setCurrentView(sortedMerch.length > 0 ? 'merch' : 'album');
     } else {
       // 背景更新：頁數有變時，避免停在不存在的頁
       setAlbumSpreadIndex(i => Math.min(i, Math.max(0, sortedAlbum.length - 1)));
@@ -1089,6 +1114,8 @@ function AppInner() {
         setError("此校稿已完成送出 ✅ 如需再次調整，請透過 LINE 與我們聯繫，謝謝您！");
         return;
       }
+      // V2.24：雲端沒有鎖定（同仁已刪除🔒檔重新開放）→ 清除本機「已送出」紀錄
+      if (safeStorage.get(SUBMITTED_PREFIX + id)) { safeStorage.remove(SUBMITTED_PREFIX + id); setDone(null); }
       const str = JSON.stringify(data);
       lastListStrRef.current = str;
       safeStorage.set(LIST_CACHE_PREFIX + id, JSON.stringify({ t: Date.now(), data }));
@@ -1123,10 +1150,13 @@ function AppInner() {
 
   // 👑 V2.2：整份校稿（相冊 → 周邊）視為一條順序，看到最後一頁才可送出
   const totalItems = albumPhotos.length + merchPhotos.length;
-  const currentPos = currentView === 'album' ? albumSpreadIndex : albumPhotos.length + merchIndex;
+  // V2.24：順序改為「框畫 → 相冊」
+  const currentPos = currentView === 'merch' ? merchIndex : merchPhotos.length + albumSpreadIndex;
   // V2.16：改為「還沒看過的頁數」— 可從總覽直接跳頁，但每頁都要看過才能送出
   // V2.20：以照片 ID 判斷是否看過（不受檔案增刪、排序改變影響）
-  const allKeys = [...albumPhotos.map(p => p.id), ...merchPhotos.map(p => p.id)];
+  const allKeys = [...merchPhotos.map(p => p.id), ...albumPhotos.map(p => p.id)];
+  const unseenMerch = merchPhotos.filter(p => !visited[p.id]).length;
+  const unseenAlbum = albumPhotos.filter(p => !visited[p.id]).length;
   const unseenKeys = allKeys.filter(k => !visited[k]);
   const remainingItems = unseenKeys.length;
   const jumpTo = (view: 'album' | 'merch', idx: number) => {
@@ -1135,12 +1165,24 @@ function AppInner() {
     if (view === 'album') setAlbumSpreadIndex(idx); else setMerchIndex(idx);
     setShowOverview(false);
   };
-  const jumpToFirstUnseen = () => {
-    const ai = albumPhotos.findIndex(p => !visited[p.id]);
-    if (ai !== -1) { jumpTo('album', ai); return; }
+  const jumpToFirstUnseen = (only?: 'album' | 'merch') => {
     const mi = merchPhotos.findIndex(p => !visited[p.id]);
-    if (mi !== -1) jumpTo('merch', mi);
+    if (mi !== -1 && only !== 'album') { jumpTo('merch', mi); return; }
+    const ai = albumPhotos.findIndex(p => !visited[p.id]);
+    if (ai !== -1 && only !== 'merch') jumpTo('album', ai);
   };
+  // V2.24：未看清單（顯示給客人看還有哪些沒看）
+  const shortAlbumLabel = (i: number) => {
+    const p = albumPhotos[i]; if (!p) return '';
+    if (i === 0 && /封面/.test(p.name)) return '封面';
+    if (i === albumPhotos.length - 1 && /封底/.test(p.name)) return '封底';
+    const m = p.name.match(/_(\d+)/);
+    return m ? `跨頁${parseInt(m[1], 10)}` : `跨頁${i}`;
+  };
+  const unseenLabels = [
+    ...merchPhotos.filter(p => !visited[p.id]).map(p => p.name.replace(/\.[^.]+$/, '')),
+    ...albumPhotos.map((p, i) => (visited[p.id] ? '' : shortAlbumLabel(i))).filter(Boolean),
+  ];
   // V2.18：畫筆必附文字（同精修）
   const fbText = (id: string) => ((allFeedbacks['album'] || {})[id] || (allFeedbacks['merch'] || {})[id] || '').trim();
   const needsText = (id: string) => !!(drawings[id] && drawings[id].length) && !fbText(id);
@@ -1149,12 +1191,19 @@ function AppInner() {
   const goNextGlobal = () => {
     const cid = currentId();
     if (cid && needsText(cid)) { showToast(NEEDS_TEXT_MSG); return; }
-    if (currentView === 'album') {
-      if (albumSpreadIndex < maxSpreads) handlePageChange(albumSpreadIndex + 1);
-      else if (merchPhotos.length > 0 && !flipState) { setCurrentView('merch'); setMerchIndex(0); }
-    } else {
-      setMerchIndex(prev => Math.min(merchPhotos.length - 1, prev + 1));
+    // V2.24：框畫最後一張 → 進入相冊第一頁
+    if (currentView === 'merch') {
+      if (merchIndex < merchPhotos.length - 1) setMerchIndex(merchIndex + 1);
+      else if (albumPhotos.length > 0) { setCurrentView('album'); setAlbumSpreadIndex(0); }
+    } else if (albumSpreadIndex < maxSpreads) {
+      handlePageChange(albumSpreadIndex + 1);
     }
+  };
+  // V2.24：相冊第一頁再往前 → 回到框畫最後一張
+  const goPrevAlbum = () => {
+    if (flipState) return;
+    if (albumSpreadIndex > 0) handlePageChange(albumSpreadIndex - 1);
+    else if (merchPhotos.length > 0) { setCurrentView('merch'); setMerchIndex(merchPhotos.length - 1); }
   };
   useEffect(() => { setDrawMode(false); }, [currentView, albumSpreadIndex, merchIndex]);
   // 目前這頁標記為已看（以照片 ID 記在本機，重新整理不會重算）
@@ -1176,7 +1225,6 @@ function AppInner() {
 
   const goPrevMerch = () => {
     if (merchIndex > 0) setMerchIndex(merchIndex - 1);
-    else if (albumPhotos.length > 0) setCurrentView('album');
   };
 
   useEffect(() => {
@@ -1186,11 +1234,11 @@ function AppInner() {
 
       if (currentView === 'album' && albumPhotos.length > 0) {
         if (e.code === "ArrowRight") goNextGlobal();
-        if (e.code === "ArrowLeft") handlePageChange(Math.max(0, albumSpreadIndex - 1));
+        if (e.code === "ArrowLeft") goPrevAlbum();
         if (isAlbumRotated && e.code === "ArrowDown") { e.preventDefault(); goNextGlobal(); }
-        if (isAlbumRotated && e.code === "ArrowUp") { e.preventDefault(); handlePageChange(Math.max(0, albumSpreadIndex - 1)); }
+        if (isAlbumRotated && e.code === "ArrowUp") { e.preventDefault(); goPrevAlbum(); }
       } else if (currentView === 'merch' && merchPhotos.length > 0) {
-        if (e.code === "ArrowRight") setMerchIndex(prev => Math.min(merchPhotos.length - 1, prev + 1));
+        if (e.code === "ArrowRight") goNextGlobal();
         if (e.code === "ArrowLeft") goPrevMerch();
       }
     };
@@ -1225,7 +1273,7 @@ function AppInner() {
     const cross = isAlbumRotated ? dx : dy;
     if (Math.abs(main) < 50 || Math.abs(main) < Math.abs(cross)) return;
     if (main < 0) goNextGlobal();
-    else handlePageChange(Math.max(0, albumSpreadIndex - 1));
+    else goPrevAlbum();
   };
 
   const handleFeedbackChange = (key: string, value: string) => {
@@ -1276,8 +1324,8 @@ function AppInner() {
     const { album, merch } = collectFeedbackItems();
     let summary = "";
     const mark = (it: { strokes: Stroke[] }) => (it.strokes.length ? '（含畫面標註）' : '');
-    if (album.length) summary += `\n📖 【相冊校稿】：\n` + album.map(it => `📍 [相冊 - ${it.label}]${mark(it)}：\n   ${it.feedback}\n`).join("");
     if (merch.length) summary += `\n🖼️ 【框畫校稿】：\n` + merch.map(it => `📍 [框畫 - ${it.label}]${mark(it)}：\n   ${it.feedback}\n`).join("");
+    if (album.length) summary += `\n📖 【相冊校稿】：\n` + album.map(it => `📍 [相冊 - ${it.label}]${mark(it)}：\n   ${it.feedback}\n`).join("");
     return summary.trim();
   };
 
@@ -1361,32 +1409,31 @@ function AppInner() {
       submittedAt: new Date().toISOString(),
       totalAlbum: albumPhotos.length,
       totalMerch: merchPhotos.length,
-      items: [...album, ...merch],
+      items: [...merch, ...album],
       summary,
       metrics: buildMetrics(annotFail),
       userAgent: navigator.userAgent,
     };
     // 無修改：用 sendBeacon 背景送出（不等待，立即開 LINE）
-    if (beacon && navigator.sendBeacon) {
-      try { return navigator.sendBeacon(API_URL, new Blob([JSON.stringify(payload)], { type: 'text/plain;charset=utf-8' })); }
-      catch { return false; }
-    }
+    // V2.24：一律等雲端回覆（最多 8 秒），才能得知「是否已經送出過」→ 確保只有一次校稿機會
+    void beacon;
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), BACKUP_WAIT_MS);
-    let ok = false;
+    let ok = false, locked = false;
     try {
       // text/plain 可避免 CORS 預檢，Apps Script 照常收到 JSON
       const res = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload), signal: ctrl.signal });
       const json = JSON.parse(await res.text());
       ok = !!json.ok;
+      locked = !!json.locked;
     } catch (err) {
       console.warn("Cloud backup failed", err);
     } finally {
       clearTimeout(timer);
     }
     // 有修改項目 → 不論第一段是否在 8 秒內回應，都請雲端產生 PDF（雲端會等第一段寫完才做）
-    if (payload.items.length) requestPdf(ref, status);
-    return ok;
+    if (payload.items.length && !locked) requestPdf(ref, status);
+    return { ok, locked };
   };
 
   // 👑 LINE 串接：先複製 → 同步雲端（最多等 8 秒）→ 跳轉 LINE
@@ -1398,15 +1445,17 @@ function AppInner() {
       if (r) listUnstableRef.current = isListUnstable(r.data);
       if (r && r.added > 0) return;
     }
-    const ai = albumPhotos.findIndex(p => needsText(p.id));
-    if (ai !== -1) { jumpTo('album', ai); showToast(`「${getAlbumIndicatorLabel(ai)}」有畫筆標註，請補上文字說明後再送出`); return; }
     const mi = merchPhotos.findIndex(p => needsText(p.id));
     if (mi !== -1) { jumpTo('merch', mi); showToast(`「${merchPhotos[mi].name.split('.')[0]}」有畫筆標註，請補上文字說明後再送出`); return; }
+    const ai = albumPhotos.findIndex(p => needsText(p.id));
+    if (ai !== -1) { jumpTo('album', ai); showToast(`「${getAlbumIndicatorLabel(ai)}」有畫筆標註，請補上文字說明後再送出`); return; }
+    // V2.24：保險 — 還有沒看的頁就不能送出
+    if (remainingItems > 0) { jumpToFirstUnseen(); showToast(`還有 ${remainingItems} 頁未看：${unseenLabels.slice(0, 4).join('、')}${unseenLabels.length > 4 ? ' 等' : ''}`); return; }
     setShowFinalUI(true);
   };
 
   const handleSendToLine = async (type: "approve" | "feedback") => {
-    if (sendingStatus) return; // 防止重複點擊
+    if (sendingStatus || done) return; // 防止重複點擊；V2.24：送出過就不能再送
 
     // V2.2：同一次送出重按時沿用同一編號，雲端端會自動略過重複資料
     const prev = submitRefRef.current;
@@ -1426,11 +1475,18 @@ function AppInner() {
     // 第一重：複製完整內容（必須在任何 await 網路請求之前，iOS 才允許）
     await copyText(textToSend);
 
-    // 第二重：雲端備份（有修改才等待；無修改背景送出公版紀錄）
-    if (type === "feedback") setIsSyncing(true);
-    const synced = await backupToCloud(type, ref, summary, type === "approve");
+    // 第二重：雲端備份並鎖定（V2.24：有無修改都等雲端回覆，確認是第一次送出）
+    setIsSyncing(true);
+    const { ok: synced, locked } = await backupToCloud(type, ref, summary, false);
     setIsSyncing(false);
+    if (locked) {
+      // 這個校稿先前已經送出過（例如另一台裝置）→ 不再開 LINE，避免重複訊息
+      setShowFinalUI(false);
+      setDone({ ref: '', locked: true, text: textToSend });
+      return;
+    }
     if (synced) safeStorage.remove(DRAFT_PREFIX + folderId);
+    safeStorage.set(SUBMITTED_PREFIX + folderId, JSON.stringify({ ref, at: Date.now() }));
 
     // 第三重：LINE 預填文字過長時截斷，避免網址過長無法開啟
     let lineText = textToSend;
@@ -1439,8 +1495,10 @@ function AppInner() {
         `…\n\n（內容較長，完整需求已${synced ? "同步至雲端並" : ""}複製，請直接貼上）`;
     }
     const lineUrl = `https://line.me/R/oaMessage/${encodeURIComponent(BR.lineId)}/?${encodeURIComponent(lineText)}`;
+    // V2.24：送出後立刻換成「已完成」畫面，不再出現送出按鈕（避免客人重按造成 LINE 兩則訊息）
+    setShowFinalUI(false);
+    setDone({ ref, locked: false, text: textToSend });
     window.location.href = lineUrl;
-    setTimeout(() => setSendingStatus(null), 2000);
   };
 
   if (appMode === 'admin') {
@@ -1551,6 +1609,10 @@ function AppInner() {
                 <span className="legal-text">此為專屬機密校稿連結，為保障您的隱私，請妥善保管，勿將網址發布或分享至公開社群平台。</span>
               </div>
               <div className="legal-item">
+                <span className="legal-icon">🧭</span>
+                <span className="legal-text"><strong>【校稿順序】</strong>若有框畫商品，會先顯示框畫，再顯示相冊。框畫與相冊每一頁都看過後，才能完成送出；畫面下方會列出尚未看過的頁面。</span>
+              </div>
+              <div className="legal-item">
                 <span className="legal-icon">📑</span>
                 <span className="legal-text"><strong>【快速翻頁】</strong>點選畫面下方「全部頁面」，可一次看到所有頁面縮圖，點一下即可跳到該頁，不必一頁一頁翻。</span>
               </div>
@@ -1564,6 +1626,29 @@ function AppInner() {
           </div>
         </div>
   );
+
+  // ✅ V2.24：完成畫面（送出後／已送出過），不再提供任何送出按鈕
+  if (done) {
+    return (
+      <React.Fragment>
+        <style>{GLOBAL_STYLES}</style>
+        <div className="admin-viewport">
+          <div className="admin-box done-box">
+            <h1 className="brand-logo-text" style={{ fontSize: '2rem' }}>{BR.display}</h1>
+            <div className="done-icon">✅</div>
+            <h2 className="done-title">{done.locked && !done.text ? '此校稿已完成送出' : done.locked ? '此校稿先前已送出過' : '校稿已送出，謝謝您！'}</h2>
+            {done.ref && <p className="done-ref">需求單編號：{done.ref}</p>}
+            <p className="done-desc">
+              {done.locked
+                ? '每份校稿只能送出一次，此連結已關閉。如需再次調整，請透過 LINE 與我們聯繫。'
+                : `正在為您開啟 LINE（${BR.lineId}）。若 LINE 沒有自動開啟，訊息已為您複製，請直接到 LINE 官方帳號貼上傳送。`}
+            </p>
+            {!done.locked && <p className="done-note">此連結已關閉，無法再次送出；如需再次調整，請透過 LINE 與我們聯繫。</p>}
+          </div>
+        </div>
+      </React.Fragment>
+    );
+  }
 
   if (loading || error || dynamicAspectRatio === null || (albumPhotos.length === 0 && merchPhotos.length === 0)) {
     return (
@@ -1588,8 +1673,20 @@ function AppInner() {
     baseRightIndex = flipState.direction === "next" ? flipState.to : flipState.from;
   }
 
-  const ALBUM_CROP_Y = "1.5%";
-  const ALBUM_CROP_X = "0.75%";
+  // V2.24：裁切線以 mm 換算（300 DPI）；取不到可靠尺寸時退回舊版百分比（依 mm 等比例放大）
+  const albumCropMm = albumCropMmFor(albumPhotos.map(p => p.name).join("|") + "|" + albumName);
+  let ALBUM_CROP_Y = `${1.5 * albumCropMm / ALBUM_CROP_DEFAULT_MM}%`;
+  let ALBUM_CROP_X = `${0.75 * albumCropMm / ALBUM_CROP_DEFAULT_MM}%`;
+  {
+    const pr = probeRef.current;
+    const pp = pr ? albumPhotos.find(p => p.id === pr.id) : undefined;
+    if (pp && pp.h && !metricsRef.current.ratioFixed) {
+      const hMm = (pp.h / MERCH_DPI) * 25.4;          // 跨頁（或單頁）實際高度 mm
+      const fy = albumCropMm / hMm;                   // 佔高度比例
+      const fx = fy / (dynamicAspectRatio || 2);      // 佔整個書本寬度比例
+      if (fy > 0.003 && fy < 0.08) { ALBUM_CROP_Y = `${fy * 100}%`; ALBUM_CROP_X = `${fx * 100}%`; }
+    }
+  }
   const MERCH_CROP_PERCENT = "1.5%";
 
   const isCurrentViewSingle = checkIsSinglePage(albumPhotos[albumSpreadIndex], albumSpreadIndex, albumPhotos.length);
@@ -1628,7 +1725,6 @@ function AppInner() {
         if (side === "left") return null;
         return (
           <>
-            <div className="cover-spine" />
             <div style={{
               width: "100%", height: "100%", backgroundColor: "#fff",
               backgroundImage: photo.low ? `url("${photo.url}"), url("${photo.low}")` : `url("${photo.url}")`,
@@ -1657,7 +1753,6 @@ function AppInner() {
 
     return (
       <>
-        {pageIdx === 0 && <div className="cover-spine" />}
         {pageIdx !== 0 && side === "left" && <div className="shadow-right-edge" />}
         {pageIdx !== 0 && side === "right" && <div className="shadow-left-edge" />}
         <div style={{ width: "100%", height: "100%", backgroundColor: "#fff", backgroundImage: photo.low ? `url("${photo.url}"), url("${photo.low}")` : `url("${photo.url}")`, backgroundSize: "200% 100%", backgroundPosition: side === "left" ? "left center" : "right center", backgroundRepeat: "no-repeat" }} />
@@ -1806,18 +1901,20 @@ function AppInner() {
 
           {merchPhotos.length > 0 && albumPhotos.length > 0 && (
             <div className="view-tabs">
+              {/* V2.24：框畫在前；紅點＝該分頁還沒看的數量 */}
               <button
-                className={`tab-btn ${currentView === 'album' ? 'active' : ''}`}
-                onClick={() => setCurrentView('album')}
-              >
-                <span>📖 相冊校稿</span>
-              </button>
-              <button
-                className={`tab-btn ${currentView === 'merch' ? 'active' : ''} ${!merchVisited ? 'tab-attention' : ''}`}
+                className={`tab-btn ${currentView === 'merch' ? 'active' : ''} ${currentView !== 'merch' && unseenMerch > 0 ? 'tab-attention' : ''}`}
                 onClick={() => setCurrentView('merch')}
               >
-                <span>🖼️ 框畫校稿</span>
-                {!merchVisited && <span className="more-badge">{merchPhotos.length}</span>}
+                <span>① 🖼️ 框畫校稿</span>
+                {unseenMerch > 0 && <span className="more-badge">{unseenMerch}</span>}
+              </button>
+              <button
+                className={`tab-btn ${currentView === 'album' ? 'active' : ''} ${currentView !== 'album' && unseenAlbum > 0 ? 'tab-attention' : ''}`}
+                onClick={() => setCurrentView('album')}
+              >
+                <span>② 📖 相冊校稿</span>
+                {unseenAlbum > 0 && <span className="more-badge">{unseenAlbum}</span>}
               </button>
             </div>
           )}
@@ -1828,10 +1925,15 @@ function AppInner() {
           </div>
         </header>
 
-        {/* V2.6：提醒客人周邊商品也要校稿（點一下直接切換） */}
-        {gatePassed && albumPhotos.length > 0 && merchPhotos.length > 0 && !merchVisited && (
-          <div className="merch-hint" onClick={() => setCurrentView('merch')}>
-            <span>📦 框畫商品在相冊最後頁，或點選上方按鈕校稿</span>
+        {/* V2.24：提醒另一區還有沒看的內容（點一下直接前往） */}
+        {gatePassed && albumPhotos.length > 0 && merchPhotos.length > 0 && currentView === 'merch' && unseenAlbum > 0 && (
+          <div className="merch-hint" onClick={() => jumpToFirstUnseen('album')}>
+            <span>📖 框畫看完後，請繼續校稿相冊（還有 {unseenAlbum} 頁未看）›</span>
+          </div>
+        )}
+        {gatePassed && albumPhotos.length > 0 && merchPhotos.length > 0 && currentView === 'album' && unseenMerch > 0 && (
+          <div className="merch-hint" onClick={() => jumpToFirstUnseen('merch')}>
+            <span>🖼️ 還有 {unseenMerch} 件框畫商品未看，點此前往 ›</span>
           </div>
         )}
 
@@ -1839,7 +1941,7 @@ function AppInner() {
           // V2.1：旋轉時書本寬度 W 變成螢幕上的高度
           const ratio = dynamicAspectRatio || 2;
           const rotatedW = fs ? `min(84vh, ${(94 * ratio).toFixed(2)}vw)` : `min(66vh, ${(88 * ratio).toFixed(2)}vw)`;
-          const goPrev = () => handlePageChange(Math.max(0, albumSpreadIndex - 1));
+          const goPrev = goPrevAlbum;
           const goNext = goNextGlobal;
           const bookInner = (
             <>
@@ -1897,7 +1999,7 @@ function AppInner() {
             <button
               className={`nav-btn-floating ${isAlbumRotated ? 'nav-up' : 'nav-left'}`}
               onClick={goPrev}
-              disabled={albumSpreadIndex === 0 || !!flipState}
+              disabled={(albumSpreadIndex === 0 && merchPhotos.length === 0) || !!flipState}
             >
               {isAlbumRotated ? <span style={{ display: 'inline-block', transform: 'rotate(90deg)' }}>&#10094;</span> : <>&#10094;</>}
             </button>
@@ -1929,7 +2031,7 @@ function AppInner() {
             <button
               className={`nav-btn-floating ${isAlbumRotated ? 'nav-down' : 'nav-right'} ${remainingItems > 0 ? 'has-more' : ''}`}
               onClick={goNext}
-              disabled={(albumSpreadIndex === maxSpreads && merchPhotos.length === 0) || !!flipState}
+              disabled={albumSpreadIndex === maxSpreads || !!flipState}
               title={remainingItems > 0 ? `還有 ${remainingItems} 頁待確認` : ''}
             >
               {isAlbumRotated ? <span style={{ display: 'inline-block', transform: 'rotate(90deg)' }}>&#10095;</span> : <>&#10095;</>}
@@ -1948,7 +2050,7 @@ function AppInner() {
             <button
               className="nav-btn-floating nav-left"
               onClick={goPrevMerch}
-              disabled={merchIndex === 0 && albumPhotos.length === 0}
+              disabled={merchIndex === 0}
             >
               &#10094;
             </button>
@@ -2034,7 +2136,7 @@ function AppInner() {
             <button
               className={`nav-btn-floating nav-right ${remainingItems > 0 ? 'has-more' : ''}`}
               onClick={goNextGlobal}
-              disabled={merchIndex === merchPhotos.length - 1}
+              disabled={merchIndex === merchPhotos.length - 1 && albumPhotos.length === 0}
               title={remainingItems > 0 ? `還有 ${remainingItems} 頁待確認` : ''}
             >
               &#10095;
@@ -2069,9 +2171,14 @@ function AppInner() {
           })()}
 
           <div className="navigation-bar">
-             <div className={`page-remaining ${remainingItems === 0 ? 'last' : ''}`}>
-               {remainingItems > 0 ? `還有 ${remainingItems} 頁未看` : '✓ 已看完全部內容'}
-             </div>
+             {remainingItems > 0 ? (
+               <button type="button" className="page-remaining" title={unseenLabels.join('、')}
+                 onClick={() => { setOverviewFilter('unseen'); openOverview(); }}>
+                 還有 {remainingItems} 頁未看：{unseenLabels.slice(0, 4).join('、')}{unseenLabels.length > 4 ? ' 等' : ''} ›
+               </button>
+             ) : (
+               <div className="page-remaining last">✓ 已看完全部內容</div>
+             )}
              <div className="ov-btn-wrap">
                {gatePassed && !ovTipDone && !ovTipHidden && totalItems > 3 && (
                  <div className="ov-tip-bubble" onClick={openOverview}>
@@ -2084,7 +2191,7 @@ function AppInner() {
              {remainingItems > 0 ? (
                currentPos < totalItems - 1
                  ? <button className="finish-btn" onClick={goNextGlobal} disabled={!!flipState}>下一頁 ›</button>
-                 : <button className="finish-btn" onClick={jumpToFirstUnseen}>前往未看頁 ›</button>
+                 : <button className="finish-btn" onClick={() => jumpToFirstUnseen()}>前往未看頁 ›</button>
              ) : (
                <button className="finish-btn" onClick={handleFinishClick}>完成並送出</button>
              )}
@@ -2144,14 +2251,14 @@ function AppInner() {
                 <h2 className="brand-title" style={{ fontSize: '1.3rem' }}>📑 全部頁面</h2>
                 <button className="close-modal-btn" style={{ position: 'static' }} onClick={() => setShowOverview(false)}>✕</button>
               </div>
-              <p className="ov-tip">點選縮圖即可直接跳到該頁；每頁都看過後即可送出。</p>
+              <p className="ov-tip">點選縮圖即可直接跳到該頁；框畫與相冊每一頁都看過後才能送出。</p>
               <div className="ov-filters">
                 <button className={`tab-btn ${overviewFilter === 'all' ? 'active' : ''}`} onClick={() => setOverviewFilter('all')}>全部（{totalItems}）</button>
                 <button className={`tab-btn ${overviewFilter === 'unseen' ? 'active' : ''}`} onClick={() => setOverviewFilter('unseen')}>未看（{remainingItems}）</button>
               </div>
               <div className="ov-scroll">
-                {renderGroup('album', `📖 相冊（${albumPhotos.length} 頁）`)}
-                {renderGroup('merch', `🖼️ 框畫商品（${merchPhotos.length} 件）`)}
+                {renderGroup('merch', `① 🖼️ 框畫商品（${merchPhotos.length} 件）`)}
+                {renderGroup('album', `② 📖 相冊（${albumPhotos.length} 頁）`)}
                 {!items.length && <div className="ov-empty">✓ 全部頁面都看過了</div>}
               </div>
             </div>
@@ -2165,11 +2272,12 @@ function AppInner() {
             <button className="close-modal-btn" onClick={() => setShowFinalUI(false)}>✕</button>
             <h2 className="brand-title" style={{ fontSize: '1.4rem' }}>Layout Proofing 校稿結果</h2>
             <p style={{ color: '#aaa', fontSize: '0.85rem', marginBottom: '10px', textAlign: 'center' }}>請點擊按鈕，系統將為您跳轉至 LINE。</p>
+            <p className="once-warn">⚠️ 每份校稿只能送出一次，送出後連結即關閉，請確認內容無誤再送出。</p>
 
             {(() => {
               const summary = generateFeedbackSummary();
               const hasFeedback = !!summary;
-              const busyText = isSyncing ? "☁️ 正在同步修改需求，請稍候…" : "✅ 已複製！正在開啟 LINE...";
+              const busyText = isSyncing ? "☁️ 正在送出，請稍候…" : "✅ 已複製！正在開啟 LINE...";
               return (
                 <div className="action-cards-container">
                   <div className="action-card">
